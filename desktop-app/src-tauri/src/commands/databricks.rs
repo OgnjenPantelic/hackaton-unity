@@ -1060,8 +1060,13 @@ pub async fn check_uc_permissions(
     if let Some(metastore) = find_metastore_for_region(metastores, &region) {
         let metastore_id = metastore["metastore_id"].as_str().unwrap_or("");
         let metastore_name = metastore["name"].as_str().unwrap_or("");
+        let metastore_owner = metastore["owner"].as_str().unwrap_or("");
 
-        // Check permissions on this metastore (account-level API)
+        let owner_info = get_metastore_owner_info(metastore_owner, &credentials);
+
+        // Metastore owner has implicit full privileges
+        let is_owner = metastore_owner == client_id.as_str();
+
         let permissions_url = format!(
             "https://{}/api/2.0/accounts/{}/metastores/{}/permissions",
             accounts_host, account_id, metastore_id
@@ -1074,7 +1079,9 @@ pub async fn check_uc_permissions(
             .await;
 
         let (has_create_catalog, has_create_external_location, has_create_storage_credential) =
-            if let Ok(resp) = permissions_response {
+            if is_owner {
+                (true, true, true)
+            } else if let Ok(resp) = permissions_response {
                 if resp.status().is_success() {
                     if let Ok(perm_json) = resp.json::<serde_json::Value>().await {
                         let assignments = perm_json["privilege_assignments"].as_array();
@@ -1084,6 +1091,10 @@ pub async fn check_uc_permissions(
 
                         if let Some(arr) = assignments {
                             for assignment in arr {
+                                let principal = assignment["principal"].as_str().unwrap_or("");
+                                if principal != client_id.as_str() {
+                                    continue;
+                                }
                                 if let Some(privileges) = assignment["privileges"].as_array() {
                                     for priv_val in privileges {
                                         let priv_str = priv_val.as_str().unwrap_or("");
@@ -1109,15 +1120,15 @@ pub async fn check_uc_permissions(
                         (false, false, false)
                     }
                 } else {
-                    (true, true, true)
+                    (false, false, false)
                 }
             } else {
-                (true, true, true)
+                (false, false, false)
             };
 
         let can_create =
             has_create_catalog && has_create_external_location && has_create_storage_credential;
-        let message = if can_create {
+        let permissions_msg = if can_create {
             "You have the required permissions to create catalogs.".to_string()
         } else {
             let mut missing = Vec::new();
@@ -1135,6 +1146,7 @@ pub async fn check_uc_permissions(
                 missing.join(", ")
             )
         };
+        let message = format!("{} {}", owner_info, permissions_msg);
 
         Ok(UCPermissionCheck {
             metastore: MetastoreInfo {
