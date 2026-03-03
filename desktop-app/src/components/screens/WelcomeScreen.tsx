@@ -32,7 +32,7 @@ const WandIcon = () => (
 
 
 const WelcomeScreen: React.FC = () => {
-  const { setScreen, deployment } = useWizard();
+  const { setScreen } = useWizard();
 
   return (
     <div className="container">

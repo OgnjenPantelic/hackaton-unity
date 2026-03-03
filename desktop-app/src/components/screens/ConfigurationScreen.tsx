@@ -604,6 +604,19 @@ export function ConfigurationScreen() {
                 className={formSubmitAttempted && allRequiredFields.has(sf.key) && !formValues[sf.key] ? "input-error" : ""}
               />
               <div className="help-text">{sf.description}</div>
+              {(() => {
+                const sfVal = formValues[sf.key];
+                if (!sfVal || typeof sfVal !== "string") return null;
+                const sfParsed = parseCidr(sfVal);
+                if (!sfParsed) return null;
+                let sfWarn: string | null = null;
+                if (sf.key.startsWith("private_subnets_cidr_") && (sfParsed.prefixLen < 17 || sfParsed.prefixLen > 26))
+                  sfWarn = `⚠ Subnet /${sfParsed.prefixLen} is outside the Databricks recommended /17–/26 range.`;
+                else if (sf.key.startsWith("privatelink_subnets_cidr_") && sfParsed.prefixLen < 27)
+                  sfWarn = `⚠ PrivateLink subnet /${sfParsed.prefixLen} is larger than needed. Recommended: /28 (only hosts a few ENIs).`;
+                if (!sfWarn) return null;
+                return <div className="help-text" style={{ color: "#ffb347" }}>{sfWarn}</div>;
+              })()}
             </div>
           ))}
         </React.Fragment>
@@ -915,6 +928,8 @@ export function ConfigurationScreen() {
           let warn: string | null = null;
           if (variable.name === "cidr_block" && (p.prefixLen < 15 || p.prefixLen > 24))
             warn = `⚠ VPC prefix /${p.prefixLen} is outside the recommended /15–/24 range. Private subnets would be /${p.prefixLen + 2}, but Databricks requires /17–/26.`;
+          else if (variable.name === "vpc_cidr_range" && (p.prefixLen < 15 || p.prefixLen > 24))
+            warn = `⚠ VPC prefix /${p.prefixLen} is outside the recommended /15–/24 range. Private subnets should be /17–/26 for Databricks.`;
           else if (variable.name === "cidr" && (p.prefixLen < 16 || p.prefixLen > 24))
             warn = `⚠ VNet prefix /${p.prefixLen} is outside the recommended /16–/24 range.`;
           else if ((variable.name === "subnet_public_cidr" || variable.name === "subnet_private_cidr") && p.prefixLen > 26)
