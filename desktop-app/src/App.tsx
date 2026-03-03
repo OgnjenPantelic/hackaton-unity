@@ -3,14 +3,17 @@ import { AssistantProvider } from "./context/AssistantContext";
 import { useAssistantContext } from "./context/AssistantContext";
 import { WizardRouter } from "./components/WizardRouter";
 import { AssistantPanel } from "./components/assistant";
+import { ErrorBoundary } from "./components/ui";
 
 function App() {
   return (
-    <WizardProvider>
-      <AssistantProvider>
-        <AppLayout />
-      </AssistantProvider>
-    </WizardProvider>
+    <ErrorBoundary>
+      <WizardProvider>
+        <AssistantProvider>
+          <AppLayout />
+        </AssistantProvider>
+      </WizardProvider>
+    </ErrorBoundary>
   );
 }
 

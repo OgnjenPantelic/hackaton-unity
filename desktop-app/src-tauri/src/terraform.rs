@@ -230,6 +230,11 @@ pub fn generate_tfvars(values: &HashMap<String, serde_json::Value>, variables: &
                 if s.trim().is_empty() && var.default.is_none() {
                     continue;
                 }
+                // Skip Terraform null literals (parsed from `default = null`)
+                let trimmed = s.trim();
+                if trimmed == "null" || trimmed.starts_with("null ") {
+                    continue;
+                }
             }
             
             let var_type = var.var_type.to_lowercase();
@@ -238,20 +243,34 @@ pub fn generate_tfvars(values: &HashMap<String, serde_json::Value>, variables: &
                 serde_json::Value::String(s) => {
                     // Check if the variable type is map or list and try to parse the string
                     if var_type.starts_with("map") || var_type.contains("map(") {
-                        // Try to parse as JSON object, otherwise output as empty map
                         if let Ok(obj) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(s) {
                             format_map(&var.name, &obj)
                         } else if s.trim().is_empty() || s.trim() == "{}" {
                             format!("{} = {{}}", var.name)
+                        } else if s.trim().starts_with('{') {
+                            // HCL literal — skip, let Terraform use its default
+                            continue;
                         } else {
                             format!("{} = \"{}\"", var.name, s)
                         }
-                    } else if var_type.starts_with("list") || var_type.contains("list(") {
-                        // Try to parse as JSON array, otherwise output as empty list
+                    } else if var_type.starts_with("object") || var_type.contains("object(") {
+                        if let Ok(obj) = serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(s) {
+                            format_map(&var.name, &obj)
+                        } else if s.trim().is_empty() || s.trim() == "{}" {
+                            format!("{} = {{}}", var.name)
+                        } else if s.trim().starts_with('{') {
+                            continue;
+                        } else {
+                            format!("{} = \"{}\"", var.name, s)
+                        }
+                    } else if var_type.starts_with("list") || var_type.contains("list(") || var_type.starts_with("set") || var_type.contains("set(") {
                         if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(s) {
                             format_list(&var.name, &arr)
                         } else if s.trim().is_empty() || s.trim() == "[]" {
                             format!("{} = []", var.name)
+                        } else if s.trim().starts_with('[') {
+                            // HCL literal that isn't valid JSON — skip, let Terraform use default
+                            continue;
                         } else {
                             format!("{} = \"{}\"", var.name, s)
                         }
@@ -325,16 +344,42 @@ fn format_map(name: &str, obj: &serde_json::Map<String, serde_json::Value>) -> S
         return format!("{} = {{}}", name);
     }
     let mut obj_lines = vec![format!("{} = {{", name)];
-    for (k, v) in obj {
-        match v {
-            serde_json::Value::String(s) => obj_lines.push(format!("  \"{}\" = \"{}\"", k, s)),
-            serde_json::Value::Number(n) => obj_lines.push(format!("  \"{}\" = {}", k, n)),
-            serde_json::Value::Bool(b) => obj_lines.push(format!("  \"{}\" = {}", k, b)),
-            _ => {}
-        }
-    }
+    format_object_fields(obj, 1, &mut obj_lines);
     obj_lines.push("}".to_string());
     obj_lines.join("\n")
+}
+
+fn format_object_fields(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    depth: usize,
+    lines: &mut Vec<String>,
+) {
+    let indent = "  ".repeat(depth);
+    for (k, v) in obj {
+        match v {
+            serde_json::Value::String(s) => lines.push(format!("{}{} = \"{}\"", indent, k, s)),
+            serde_json::Value::Number(n) => lines.push(format!("{}{} = {}", indent, k, n)),
+            serde_json::Value::Bool(b) => lines.push(format!("{}{} = {}", indent, k, b)),
+            serde_json::Value::Object(nested) => {
+                lines.push(format!("{}{} = {{", indent, k));
+                format_object_fields(nested, depth + 1, lines);
+                lines.push(format!("{}}}", indent));
+            }
+            serde_json::Value::Array(arr) => {
+                let items: Vec<String> = arr
+                    .iter()
+                    .map(|v| match v {
+                        serde_json::Value::String(s) => format!("\"{}\"", s),
+                        serde_json::Value::Number(n) => n.to_string(),
+                        serde_json::Value::Bool(b) => b.to_string(),
+                        _ => "null".to_string(),
+                    })
+                    .collect();
+                lines.push(format!("{}{} = [{}]", indent, k, items.join(", ")));
+            }
+            serde_json::Value::Null => lines.push(format!("{}{} = null", indent, k)),
+        }
+    }
 }
 
 pub fn run_terraform(

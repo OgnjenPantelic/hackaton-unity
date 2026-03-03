@@ -158,6 +158,61 @@ pub fn get_templates(app: AppHandle) -> Result<Vec<Template>, String> {
         });
     }
 
+    // SRA (Security Reference Architecture) templates
+    if templates_dir.join("aws-sra").exists() {
+        templates.push(Template {
+            id: "aws-sra".to_string(),
+            name: "AWS Security Reference Architecture".to_string(),
+            cloud: "aws".to_string(),
+            description: "Enterprise-grade security with PrivateLink, CMK encryption, and compliance controls".to_string(),
+            features: vec![
+                "VPC with PrivateLink (no public access)".to_string(),
+                "Customer-managed keys (CMK) encryption".to_string(),
+                "Security Analysis Tool (SAT)".to_string(),
+                "Compliance Security Profile".to_string(),
+                "Network connectivity configuration".to_string(),
+                "Audit log delivery".to_string(),
+                "Unity Catalog with isolated catalogs".to_string(),
+            ],
+        });
+    }
+
+    if templates_dir.join("azure-sra").exists() {
+        templates.push(Template {
+            id: "azure-sra".to_string(),
+            name: "Azure Security Reference Architecture".to_string(),
+            cloud: "azure".to_string(),
+            description: "Enterprise-grade hub-spoke deployment with Private Endpoints and CMK encryption".to_string(),
+            features: vec![
+                "Hub-spoke VNet architecture".to_string(),
+                "Private Endpoints (no public access)".to_string(),
+                "Customer-managed keys (CMK) encryption".to_string(),
+                "Azure Firewall with FQDN filtering".to_string(),
+                "Security Analysis Tool (SAT)".to_string(),
+                "Network Connectivity Configuration (NCC)".to_string(),
+                "Unity Catalog with isolated catalogs".to_string(),
+            ],
+        });
+    }
+
+    if templates_dir.join("gcp-sra").exists() {
+        templates.push(Template {
+            id: "gcp-sra".to_string(),
+            name: "GCP Security Reference Architecture".to_string(),
+            cloud: "gcp".to_string(),
+            description: "Enterprise-grade security with Private Service Connect, CMEK, and hardened firewall".to_string(),
+            features: vec![
+                "Private Service Connect (PSC)".to_string(),
+                "Customer-managed encryption keys (CMEK)".to_string(),
+                "Hardened VPC firewall rules".to_string(),
+                "IP access list restrictions".to_string(),
+                "Private access settings".to_string(),
+                "Service account impersonation".to_string(),
+                "Modular workspace deployment".to_string(),
+            ],
+        });
+    }
+
     Ok(templates)
 }
 

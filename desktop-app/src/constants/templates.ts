@@ -15,16 +15,20 @@ export const VARIABLE_DISPLAY_NAMES: Record<string, string> = {
   google_region: "Region",
   google_project_name: "Project ID",
   google_service_account_email: "Service Account Email",
-  // Network - Azure
+  // Network - Azure (simple)
   cidr: "VNet CIDR",
   subnet_public_cidr: "Public Subnet CIDR",
   subnet_private_cidr: "Private Subnet CIDR",
   create_new_vnet: "Create New VNet",
   vnet_name: "Existing VNet Name",
   vnet_resource_group_name: "VNet Resource Group",
-  // Network - AWS
+  // Network - AWS (simple)
+  create_new_vpc: "Create New VPC",
   cidr_block: "VPC CIDR",
-  // Network - GCP
+  private_subnet_1_cidr: "Private Subnet 1 CIDR",
+  private_subnet_2_cidr: "Private Subnet 2 CIDR",
+  public_subnet_cidr: "Public Subnet CIDR (NAT)",
+  // Network - GCP (simple)
   subnet_cidr: "Subnet CIDR",
   // Other
   tags: "Resource Tags",
@@ -34,6 +38,86 @@ export const VARIABLE_DISPLAY_NAMES: Record<string, string> = {
   existing_security_group_id: "Existing Security Group ID",
   metastore_id: "Existing Metastore ID",
   existing_metastore_id: "Existing Metastore ID",
+
+  // --- SRA: Azure ---
+  resource_suffix: "Resource Suffix",
+  hub_vnet_cidr: "Hub VNet CIDR",
+  hub_resource_suffix: "Hub Resource Suffix",
+  create_hub: "Create Hub Infrastructure",
+  create_workspace_vnet: "Create Workspace VNet",
+  create_workspace_resource_group: "Create Workspace Resource Group",
+  cmk_enabled: "Customer-Managed Keys (CMK)",
+  workspace_vnet: "Workspace VNet Configuration",
+  existing_hub_vnet: "Existing Hub VNet",
+  existing_workspace_vnet: "Existing Workspace VNet",
+  allowed_fqdns: "Allowed FQDNs",
+  hub_allowed_urls: "Hub Allowed URLs",
+  existing_resource_group_name: "Existing Resource Group",
+  existing_ncc_id: "Existing NCC ID",
+  existing_ncc_name: "Existing NCC Name",
+  existing_network_policy_id: "Existing Network Policy ID",
+  existing_cmk_ids: "Existing CMK IDs",
+  databricks_metastore_id: "Metastore ID",
+  workspace_security_compliance: "Security Compliance Settings",
+  workspace_name_overrides: "Resource Name Overrides",
+  sat_configuration: "SAT Configuration",
+
+  // --- SRA: AWS ---
+  resource_prefix: "Resource Prefix",
+  aws_account_id: "AWS Account ID",
+  network_configuration: "Network Mode",
+  vpc_cidr_range: "VPC CIDR Range",
+  private_subnets_cidr: "Private Subnets CIDR",
+  privatelink_subnets_cidr: "PrivateLink Subnets CIDR",
+  sg_egress_ports: "Security Group Egress Ports",
+  cmk_admin_arn: "CMK Admin ARN",
+  metastore_exists: "Metastore Already Exists",
+  audit_log_delivery_exists: "Audit Log Delivery Exists",
+  enable_compliance_security_profile: "Compliance Security Profile",
+  compliance_standards: "Compliance Standards",
+  enable_security_analysis_tool: "Security Analysis Tool (SAT)",
+  custom_vpc_id: "Custom VPC ID",
+  custom_private_subnet_ids: "Custom Private Subnet IDs",
+  custom_sg_id: "Custom Security Group ID",
+  custom_relay_vpce_id: "Custom Relay VPC Endpoint",
+  custom_workspace_vpce_id: "Custom Workspace VPC Endpoint",
+  deployment_name: "Deployment Name",
+  // AWS SRA: decomposed list sub-fields
+  private_subnets_cidr_1: "Private Subnet CIDR 1",
+  private_subnets_cidr_2: "Private Subnet CIDR 2",
+  privatelink_subnets_cidr_1: "PrivateLink Subnet CIDR 1",
+  privatelink_subnets_cidr_2: "PrivateLink Subnet CIDR 2",
+  custom_private_subnet_ids_1: "Private Subnet ID 1",
+  custom_private_subnet_ids_2: "Private Subnet ID 2",
+
+  // --- SRA: GCP ---
+  nodes_ip_cidr_range: "Workspace Subnet CIDR",
+  use_existing_vpc: "Use Existing VPC",
+  existing_vpc_name: "Existing VPC Name",
+  existing_subnet_name: "Existing Subnet Name",
+  harden_network: "Network Hardening (Firewall Rules)",
+  use_psc: "Private Service Connect (PSC)",
+  google_pe_subnet: "PSC Subnet Name",
+  google_pe_subnet_ip_cidr_range: "PSC Subnet CIDR",
+  workspace_pe: "Workspace PSC Endpoint",
+  relay_pe: "Relay PSC Endpoint",
+  relay_pe_ip_name: "Relay PE IP Name",
+  workspace_pe_ip_name: "Workspace PE IP Name",
+  relay_service_attachment: "Relay Service Attachment",
+  workspace_service_attachment: "Workspace Service Attachment",
+  use_existing_PSC_EP: "Use Existing PSC Endpoints",
+  use_existing_databricks_vpc_eps: "Use Existing Databricks VPC Endpoints",
+  existing_databricks_vpc_ep_workspace: "Existing Workspace VPC Endpoint ID",
+  existing_databricks_vpc_ep_relay: "Existing Relay VPC Endpoint ID",
+  ip_addresses: "Allowed IP Addresses",
+  account_console_url: "Account Console URL",
+  key_name: "CMEK Key Name",
+  keyring_name: "CMEK Keyring Name",
+  use_existing_cmek: "Use Existing CMEK",
+  cmek_resource_id: "Existing CMEK Resource ID",
+  use_existing_pas: "Use Existing Private Access",
+  existing_pas_id: "Existing Private Access Settings ID",
+  regional_metastore_id: "Regional Metastore ID",
 };
 
 export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
@@ -58,11 +142,15 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   create_new_vnet: "Enable to create a new VNet, or disable to use an existing VNet. New subnets will be created in either case.",
   vnet_name: "Name of your existing VNet where Databricks subnets will be created.",
   vnet_resource_group_name: "Resource group containing the VNet. Usually the same as the main resource group.",
-  cidr: "Address space for the new VNet (e.g., 10.0.0.0/20). Must be large enough for the subnets.",
+  cidr: "Use a prefix between /16 and /24 for optimal sizing.",
   subnet_public_cidr: "CIDR range for the public (host) subnet within the VNet address space.",
   subnet_private_cidr: "CIDR range for the private (container) subnet within the VNet address space.",
   // Network - AWS
-  cidr_block: "Address space for the new VPC (e.g., 10.4.0.0/16). Subnets will be automatically allocated within this range.",
+  create_new_vpc: "Enable to create a new VPC, or disable to use an existing VPC with your own subnets and security group.",
+  cidr_block: "Address space for the new VPC (e.g., 10.4.0.0/16).",
+  private_subnet_1_cidr: "CIDR for private subnet in AZ 1 (Databricks compute). Leave empty to auto-calculate as VPC/4. Suggested: keep empty unless you need custom sizing.",
+  private_subnet_2_cidr: "CIDR for private subnet in AZ 2 (Databricks compute). Leave empty to auto-calculate as VPC/4. Suggested: keep empty unless you need custom sizing.",
+  public_subnet_cidr: "CIDR for public subnet (NAT gateway only). Leave empty to auto-calculate as /28. Suggested: keep empty unless you need custom sizing.",
   // Network - GCP
   subnet_cidr: "CIDR range for the Databricks subnet (e.g., 10.0.0.0/16).",
   // Advanced
@@ -70,7 +158,70 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   existing_subnet_ids: "Use existing subnets. Required if using an existing VPC.",
   existing_security_group_id: "Use an existing security group. Required if using an existing VPC.",
   metastore_id: "Use an existing Unity Catalog metastore. Leave empty to auto-detect or create a new one.",
-  existing_metastore_id: "Use an existing Unity Catalog metastore. Leave empty to auto-detect or create a new one.",
+  existing_metastore_id: "Required. The ID of your existing Unity Catalog metastore in this region.",
+  uc_catalog_name: "Custom name for the workspace catalog and S3 bucket. Leave empty to auto-generate from resource prefix.",
+
+  // --- SRA: Azure ---
+  resource_suffix: "Suffix appended to all resource names (e.g. dbx-dev, sra).",
+  hub_vnet_cidr: "CIDR block for the hub Virtual Network. Required when creating hub infrastructure.",
+  hub_resource_suffix: "Naming suffix for hub resources. Required when creating hub infrastructure.",
+  create_hub: "Create hub infrastructure (firewall, VNet, CMK). Disable to bring your own hub.",
+  create_workspace_vnet: "Create a new SRA-managed workspace VNet. Disable to use an existing VNet.",
+  create_workspace_resource_group: "Create a new resource group for the workspace. Disable to use an existing one.",
+  cmk_enabled: "Encrypt managed disks and services with customer-managed keys. Enabled by default.",
+  allowed_fqdns: "Domains that spoke workspaces can access through the firewall. By default, no internet access is allowed.",
+  hub_allowed_urls: "Domains that serverless compute in the hub workspace can access. By default, no internet access is allowed.",
+  databricks_metastore_id: "Existing metastore ID. Required when not creating hub infrastructure.",
+  sat_configuration: "Security Analysis Tool configuration (enable, schema, catalog, serverless).",
+
+  // --- SRA: AWS ---
+  aws_account_id: "Your AWS account ID. Used for IAM roles and resource policies.",
+  resource_prefix: "Prefix for all resource names (1-26 chars, lowercase and numbers).",
+  network_configuration: "Network mode: 'isolated' creates a new VPC with PrivateLink; 'custom' uses your existing VPC.",
+  vpc_cidr_range: "CIDR range for the VPC (e.g. 10.0.0.0/16).",
+  private_subnets_cidr: "CIDR blocks for private subnets within the VPC.",
+  privatelink_subnets_cidr: "CIDR blocks for PrivateLink endpoint subnets.",
+  sg_egress_ports: "Egress ports allowed in security groups. Pre-filled with Databricks defaults — modify only if needed.",
+  cmk_admin_arn: "Optional. ARN of the IAM principal that will administer the CMK. Leave empty to skip.",
+  metastore_exists: "Whether a Unity Catalog metastore already exists in this region.",
+  audit_log_delivery_exists: "Optional. Whether audit log delivery is already configured for this account.",
+  enable_compliance_security_profile: "⚠ IRREVERSIBLE — Once enabled, it cannot be removed. The only way to revert is to delete the workspace. Enables the paid Enhanced Security and Compliance add-on which adds a per-DBU surcharge to all compute. Contact your Databricks account team for exact pricing.",
+  compliance_standards: "Compliance standards to apply (e.g. HIPAA, PCI-DSS). JSON array format.",
+  enable_security_analysis_tool: "Optional. Enable the Security Analysis Tool (SAT) for security monitoring.",
+  deployment_name: "Optional. Custom deployment name for the workspace. Must be pre-enabled by Databricks.",
+  custom_vpc_id: "ID of your existing VPC.",
+  custom_sg_id: "ID of your existing security group.",
+  custom_relay_vpce_id: "Optional. Existing Relay VPC Endpoint ID. Leave empty to create a new one.",
+  custom_workspace_vpce_id: "Optional. Existing Workspace VPC Endpoint ID. Leave empty to create a new one.",
+
+  // --- SRA: GCP ---
+  nodes_ip_cidr_range: "CIDR range for workspace nodes. Cannot be changed after creation.",
+  use_existing_vpc: "Use an existing VPC instead of creating a new one.",
+  existing_vpc_name: "Name of the existing VPC in your GCP project.",
+  existing_subnet_name: "Name of the existing subnet within the VPC.",
+  harden_network: "Enable firewall rules that restrict egress traffic to only Databricks control plane and GCP APIs.",
+  use_psc: "Use Private Service Connect for secure, private connectivity to Databricks. Recommended for production.",
+  google_pe_subnet: "Subnet providing IP addresses to Private Service Connect endpoints.",
+  google_pe_subnet_ip_cidr_range: "CIDR range for the PSC endpoint subnet.",
+  use_existing_PSC_EP: "Use existing GCP PSC forwarding rules instead of creating new ones.",
+  use_existing_databricks_vpc_eps: "Use existing Databricks-registered VPC endpoints for PSC.",
+  existing_databricks_vpc_ep_workspace: "ID of an existing Databricks workspace VPC endpoint.",
+  existing_databricks_vpc_ep_relay: "ID of an existing Databricks relay VPC endpoint.",
+  workspace_pe: "Name for the workspace PSC endpoint.",
+  relay_pe: "Name for the relay PSC endpoint.",
+  regional_metastore_id: "ID of a regional Unity Catalog metastore to assign. Leave empty to skip metastore assignment.",
+  ip_addresses: "IP addresses allowed to connect to the workspace. JSON array format (e.g. [\"0.0.0.0/0\"]).",
+  key_name: "Name of the CMEK key for workspace encryption.",
+  keyring_name: "Name of the CMEK keyring containing the encryption key.",
+  use_existing_cmek: "Use an existing CMEK instead of creating a new one.",
+  cmek_resource_id: "Resource ID of the existing CMEK key.",
+  use_existing_pas: "Optional. Use existing Private Access Settings instead of creating new ones.",
+  existing_pas_id: "ID of the existing Private Access Settings (found in the Databricks Account Console).",
+  relay_service_attachment: "Relay service attachment URI. Region-specific — see Databricks docs.",
+  workspace_service_attachment: "Workspace service attachment URI. Region-specific — see Databricks docs.",
+  account_console_url: "Databricks account console URL for your region.",
+  relay_pe_ip_name: "Optional. Private IP address name for the relay PSC endpoint.",
+  workspace_pe_ip_name: "Optional. Private IP address name for the workspace PSC endpoint.",
 };
 
 export const EXCLUDE_VARIABLES = [
@@ -100,4 +251,276 @@ export const EXCLUDE_VARIABLES = [
   "uc_catalog_name",
   "uc_storage_name",
   "uc_force_destroy",
+  // SRA: Azure - auto-injected or internal
+  "subscription_id",
+  "sat_force_destroy",
+  "catalog_force_destroy",
+  // SRA: AWS - region-specific config maps with sensible defaults
+  "artifact_storage_bucket",
+  "shared_datasets_bucket",
+  "region_name_config",
+  "scc_relay_config",
+  "system_table_bucket_config",
+  "log_storage_bucket_config",
+  "workspace_config",
+  "aws_partition",
+  "databricks_provider_host",
+  "databricks_gov_shard",
+  // SRA: GCP - auto-injected from credentials
+  "databricks_google_service_account",
+  "project",
+  // SRA: truly internal / power-user objects (edit tfvars directly)
+  "workspace_name_overrides",
 ] as const;
+
+/**
+ * Sub-field decomposition for complex Terraform object variables.
+ * These are rendered as individual form fields in the UI and reconstructed
+ * into proper objects before generating tfvars.
+ */
+export interface ObjectSubField {
+  key: string;
+  path: string[];
+  label: string;
+  description: string;
+  fieldType: "string" | "number" | "bool" | "select";
+  required?: boolean;
+  placeholder?: string;
+  sensitive?: boolean;
+}
+
+export const OBJECT_FIELD_DECOMPOSITION: Record<string, ObjectSubField[]> = {
+  // Azure SRA: workspace VNet config (shown when create_workspace_vnet=true)
+  workspace_vnet: [
+    { key: "workspace_vnet__cidr", path: ["cidr"], label: "Workspace VNet CIDR", description: "CIDR block for the workspace VNet.", fieldType: "string", required: true, placeholder: "10.0.0.0/20" },
+    { key: "workspace_vnet__new_bits", path: ["new_bits"], label: "Subnet Sizing", description: "Controls how VNet is divided into subnets. Default is 2.", fieldType: "select", placeholder: "2" },
+  ],
+  // Azure SRA: existing hub VNet (shown when create_hub=false)
+  existing_hub_vnet: [
+    { key: "existing_hub_vnet__route_table_id", path: ["route_table_id"], label: "Hub Route Table ID", description: "Azure resource ID of the hub route table.", fieldType: "string", required: true, placeholder: "/subscriptions/.../routeTables/..." },
+    { key: "existing_hub_vnet__vnet_id", path: ["vnet_id"], label: "Hub VNet ID", description: "Azure resource ID of the existing hub VNet.", fieldType: "string", required: true, placeholder: "/subscriptions/.../virtualNetworks/..." },
+  ],
+  // Azure SRA: existing CMK IDs (shown when create_hub=false)
+  existing_cmk_ids: [
+    { key: "existing_cmk_ids__key_vault_id", path: ["key_vault_id"], label: "Key Vault ID", description: "Azure resource ID of the Key Vault containing CMK keys.", fieldType: "string", required: true },
+    { key: "existing_cmk_ids__managed_disk_key_id", path: ["managed_disk_key_id"], label: "Managed Disk Key ID", description: "Azure resource ID of the managed disk encryption key.", fieldType: "string", required: true },
+    { key: "existing_cmk_ids__managed_services_key_id", path: ["managed_services_key_id"], label: "Managed Services Key ID", description: "Azure resource ID of the managed services encryption key.", fieldType: "string", required: true },
+  ],
+  // Azure SRA: existing workspace VNet (shown when create_workspace_vnet=false)
+  existing_workspace_vnet: [
+    { key: "existing_workspace_vnet__nc__vnet_id", path: ["network_configuration", "virtual_network_id"], label: "Virtual Network ID", description: "Azure resource ID of the existing workspace VNet.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__nc__private_subnet", path: ["network_configuration", "private_subnet_id"], label: "Private Subnet ID", description: "Azure resource ID of the private subnet.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__nc__public_subnet", path: ["network_configuration", "public_subnet_id"], label: "Public Subnet ID", description: "Azure resource ID of the public subnet.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__nc__pe_subnet", path: ["network_configuration", "private_endpoint_subnet_id"], label: "Private Endpoint Subnet ID", description: "Azure resource ID of the private endpoint subnet.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__nc__priv_nsg", path: ["network_configuration", "private_subnet_network_security_group_association_id"], label: "Private Subnet NSG Association", description: "NSG association ID for the private subnet.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__nc__pub_nsg", path: ["network_configuration", "public_subnet_network_security_group_association_id"], label: "Public Subnet NSG Association", description: "NSG association ID for the public subnet.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__dns__backend", path: ["dns_zone_ids", "backend"], label: "DNS Zone - Backend", description: "DNS zone ID for backend connectivity.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__dns__dfs", path: ["dns_zone_ids", "dfs"], label: "DNS Zone - DFS", description: "DNS zone ID for Data Lake Storage.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__dns__blob", path: ["dns_zone_ids", "blob"], label: "DNS Zone - Blob", description: "DNS zone ID for Blob Storage.", fieldType: "string", required: true },
+  ],
+  // Azure SRA: workspace security compliance (optional)
+  workspace_security_compliance: [
+    { key: "wsc__auto_update", path: ["automatic_cluster_update_enabled"], label: "Automatic Cluster Updates", description: "Enable automatic cluster updates for security patches.", fieldType: "bool" },
+    { key: "wsc__csp_enabled", path: ["compliance_security_profile_enabled"], label: "Compliance Security Profile", description: "⚠ IRREVERSIBLE — Once enabled, it cannot be removed. The only way to revert is to delete the workspace. Enables the paid Enhanced Security and Compliance add-on which adds a per-DBU surcharge to all compute. Contact your Databricks account team for exact pricing.", fieldType: "bool" },
+    { key: "wsc__csp_standards", path: ["compliance_security_profile_standards"], label: "Compliance Standards", description: "Compliance standards (e.g. HIPAA, PCI-DSS). JSON array format.", fieldType: "string", placeholder: '["HIPAA"]' },
+    { key: "wsc__esm", path: ["enhanced_security_monitoring_enabled"], label: "Enhanced Security Monitoring", description: "Adds security agents to compute nodes to monitor suspicious activity, file access, and network connections. Part of the Enhanced Security and Compliance add-on.", fieldType: "bool" },
+  ],
+  // Azure SRA: SAT configuration (optional)
+  sat_configuration: [
+    { key: "sat__enabled", path: ["enabled"], label: "Enable SAT", description: "Enable the Security Analysis Tool.", fieldType: "bool" },
+    { key: "sat__schema_name", path: ["schema_name"], label: "SAT Schema Name", description: "Schema name for SAT data.", fieldType: "string", placeholder: "sat" },
+    { key: "sat__catalog_name", path: ["catalog_name"], label: "SAT Catalog Name", description: "Catalog name for SAT data.", fieldType: "string", placeholder: "sat" },
+    { key: "sat__run_on_serverless", path: ["run_on_serverless"], label: "Run SAT on Serverless", description: "Run SAT on serverless compute.", fieldType: "bool" },
+  ],
+  // Azure SRA: SAT service principal (optional)
+  sat_service_principal: [
+    { key: "sat_sp__client_id", path: ["client_id"], label: "SAT SP Client ID", description: "Client ID of existing service principal. Leave empty to create one.", fieldType: "string" },
+    { key: "sat_sp__client_secret", path: ["client_secret"], label: "SAT SP Client Secret", description: "Client secret. Leave empty to create one.", fieldType: "string", sensitive: true },
+    { key: "sat_sp__name", path: ["name"], label: "SAT SP Name", description: "Name for the service principal.", fieldType: "string", placeholder: "spSAT" },
+  ],
+};
+
+/**
+ * Decomposition for Terraform list(string) variables into individual UI fields.
+ * Each sub-field renders as its own input and gets reassembled into an array before
+ * generating tfvars.
+ */
+export interface ListSubField {
+  key: string;
+  index: number;
+  label: string;
+  description: string;
+  required?: boolean;
+  placeholder?: string;
+}
+
+export const LIST_FIELD_DECOMPOSITION: Record<string, ListSubField[]> = {
+  // AWS SRA: private subnets (when isolated network mode)
+  private_subnets_cidr: [
+    { key: "private_subnets_cidr_1", index: 0, label: "Private Subnet CIDR 1", description: "CIDR for private subnet in AZ 1 (Databricks compute).", required: true, placeholder: "10.0.0.0/18" },
+    { key: "private_subnets_cidr_2", index: 1, label: "Private Subnet CIDR 2", description: "CIDR for private subnet in AZ 2 (Databricks compute).", required: true, placeholder: "10.0.64.0/18" },
+  ],
+  // AWS SRA: PrivateLink subnets (when isolated network mode)
+  privatelink_subnets_cidr: [
+    { key: "privatelink_subnets_cidr_1", index: 0, label: "PrivateLink Subnet CIDR 1", description: "CIDR for PrivateLink endpoint subnet in AZ 1. Fixed /28 — only hosts a few ENIs.", required: true, placeholder: "10.0.128.0/28" },
+    { key: "privatelink_subnets_cidr_2", index: 1, label: "PrivateLink Subnet CIDR 2", description: "CIDR for PrivateLink endpoint subnet in AZ 2. Fixed /28 — only hosts a few ENIs.", required: true, placeholder: "10.0.128.16/28" },
+  ],
+  // AWS SRA: custom private subnet IDs (when custom network mode)
+  custom_private_subnet_ids: [
+    { key: "custom_private_subnet_ids_1", index: 0, label: "Private Subnet ID 1", description: "ID of the first existing private subnet.", required: true, placeholder: "subnet-..." },
+    { key: "custom_private_subnet_ids_2", index: 1, label: "Private Subnet ID 2", description: "ID of the second existing private subnet.", required: true, placeholder: "subnet-..." },
+  ],
+  // AWS simple: existing subnet IDs (when using existing VPC)
+  existing_subnet_ids: [
+    { key: "existing_subnet_ids_1", index: 0, label: "Existing Subnet ID 1", description: "ID of the first existing private subnet (AZ 1).", required: true, placeholder: "subnet-..." },
+    { key: "existing_subnet_ids_2", index: 1, label: "Existing Subnet ID 2", description: "ID of the second existing private subnet (AZ 2).", required: true, placeholder: "subnet-..." },
+  ],
+};
+
+export const FQDN_GROUPS: Record<string, { id: string; label: string; description: string; urls: string[] }[]> = {
+  allowed_fqdns: [
+    { id: "azure_mgmt", label: "Azure Management", description: "Required for SAT and Azure API access.", urls: ["management.azure.com", "login.microsoftonline.com"] },
+    { id: "python", label: "Python Packages", description: "PyPI and Python package registries.", urls: ["python.org", "*.python.org", "pypi.org", "*.pypi.org", "pythonhosted.org", "*.pythonhosted.org"] },
+    { id: "r", label: "R Packages", description: "CRAN and R package registries.", urls: ["cran.r-project.org", "*.cran.r-project.org", "r-project.org"] },
+  ],
+  hub_allowed_urls: [
+    { id: "azure_mgmt", label: "Azure Management", description: "Required for SAT on serverless.", urls: ["management.azure.com", "login.microsoftonline.com"] },
+    { id: "python", label: "Python Packages", description: "PyPI and Python package registries (serverless).", urls: ["python.org", "pypi.org", "pythonhosted.org"] },
+  ],
+};
+
+export const COMPLIANCE_STANDARDS: Record<string, { value: string; label: string }[]> = {
+  aws: [
+    { value: "HIPAA", label: "HIPAA" },
+    { value: "PCI_DSS", label: "PCI-DSS" },
+    { value: "FEDRAMP_MODERATE", label: "FedRAMP Moderate" },
+    { value: "FEDRAMP_HIGH", label: "FedRAMP High" },
+    { value: "IRAP", label: "IRAP" },
+    { value: "CYBER_ESSENTIALS_PLUS", label: "UK Cyber Essentials Plus" },
+    { value: "CCCS_MEDIUM", label: "CCCS Medium (Protected B)" },
+  ],
+  azure: [
+    { value: "HIPAA", label: "HIPAA" },
+    { value: "PCI_DSS", label: "PCI-DSS" },
+    { value: "TISAX", label: "TISAX" },
+    { value: "C5", label: "C5" },
+    { value: "K_FSI", label: "K-FSI" },
+    { value: "CCCS_MEDIUM", label: "CCCS Medium (Protected B)" },
+    { value: "CYBER_ESSENTIALS_PLUS", label: "UK Cyber Essentials Plus" },
+    { value: "IRAP", label: "IRAP" },
+    { value: "ISMAP", label: "ISMAP" },
+    { value: "HITRUST", label: "HITRUST" },
+  ],
+  gcp: [
+    { value: "HIPAA", label: "HIPAA" },
+    { value: "PCI_DSS", label: "PCI-DSS" },
+    { value: "C5", label: "C5" },
+  ],
+};
+
+export const CONDITIONAL_FIELD_VISIBILITY: {
+  toggle: string;
+  defaultChecked: boolean;
+  showWhenChecked: string[];
+  showWhenUnchecked: string[];
+}[] = [
+  // AWS simple: create new VPC vs use existing
+  {
+    toggle: "create_new_vpc",
+    defaultChecked: true,
+    showWhenChecked: ["cidr_block", "private_subnet_1_cidr", "private_subnet_2_cidr", "public_subnet_cidr"],
+    showWhenUnchecked: ["existing_vpc_id", "existing_subnet_ids", "existing_security_group_id"],
+  },
+  // Azure SRA: hub creation vs bring-your-own hub
+  {
+    toggle: "create_hub",
+    defaultChecked: true,
+    showWhenChecked: ["hub_vnet_cidr", "hub_resource_suffix", "allowed_fqdns", "hub_allowed_urls"],
+    showWhenUnchecked: ["existing_hub_vnet", "existing_cmk_ids", "databricks_metastore_id", "existing_ncc_id", "existing_ncc_name", "existing_network_policy_id"],
+  },
+  // Azure SRA: workspace VNet creation vs bring-your-own
+  {
+    toggle: "create_workspace_vnet",
+    defaultChecked: true,
+    showWhenChecked: ["workspace_vnet"],
+    showWhenUnchecked: ["existing_workspace_vnet"],
+  },
+  // Azure SRA: workspace resource group creation
+  {
+    toggle: "create_workspace_resource_group",
+    defaultChecked: true,
+    showWhenChecked: [],
+    showWhenUnchecked: ["existing_resource_group_name"],
+  },
+  // AWS SRA: compliance security profile controls compliance_standards
+  {
+    toggle: "enable_compliance_security_profile",
+    defaultChecked: false,
+    showWhenChecked: ["compliance_standards"],
+    showWhenUnchecked: [],
+  },
+  // AWS SRA: metastore_exists controls existing_metastore_id visibility
+  {
+    toggle: "metastore_exists",
+    defaultChecked: false,
+    showWhenChecked: ["existing_metastore_id"],
+    showWhenUnchecked: [],
+  },
+  // GCP SRA: use existing VPC vs create new
+  {
+    toggle: "use_existing_vpc",
+    defaultChecked: false,
+    showWhenChecked: ["existing_vpc_name", "existing_subnet_name"],
+    showWhenUnchecked: ["nodes_ip_cidr_range"],
+  },
+  // GCP SRA: enable Private Service Connect
+  {
+    toggle: "use_psc",
+    defaultChecked: false,
+    showWhenChecked: [
+      "google_pe_subnet", "google_pe_subnet_ip_cidr_range",
+      "workspace_pe", "relay_pe",
+      "relay_pe_ip_name", "workspace_pe_ip_name",
+      "relay_service_attachment", "workspace_service_attachment",
+      "use_existing_PSC_EP", "use_existing_databricks_vpc_eps",
+      "existing_databricks_vpc_ep_workspace", "existing_databricks_vpc_ep_relay",
+    ],
+    showWhenUnchecked: [],
+  },
+  // GCP SRA: use existing CMEK vs create new
+  {
+    toggle: "use_existing_cmek",
+    defaultChecked: false,
+    showWhenChecked: ["cmek_resource_id"],
+    showWhenUnchecked: ["key_name", "keyring_name"],
+  },
+  // GCP SRA: use existing PAS vs create new
+  {
+    toggle: "use_existing_pas",
+    defaultChecked: false,
+    showWhenChecked: ["existing_pas_id"],
+    showWhenUnchecked: [],
+  },
+];
+
+export const CONDITIONAL_SELECT_VISIBILITY: {
+  toggle: string;
+  defaultValue: string;
+  options: { value: string; showFields: string[] }[];
+}[] = [
+  // AWS SRA: isolated vs custom network
+  {
+    toggle: "network_configuration",
+    defaultValue: "isolated",
+    options: [
+      {
+        value: "isolated",
+        showFields: ["vpc_cidr_range", "private_subnets_cidr", "privatelink_subnets_cidr", "sg_egress_ports"],
+      },
+      {
+        value: "custom",
+        showFields: ["custom_vpc_id", "custom_private_subnet_ids", "custom_sg_id", "custom_relay_vpce_id", "custom_workspace_vpce_id"],
+      },
+    ],
+  },
+];

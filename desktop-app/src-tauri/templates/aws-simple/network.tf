@@ -1,5 +1,5 @@
 locals {
-  create_vpc = var.existing_vpc_id == ""
+  create_vpc = var.create_new_vpc
 }
 
 module "vpc" {
@@ -20,7 +20,7 @@ module "vpc" {
   private_subnet_names = [for az in local.availability_zones : "${var.prefix}-private-${az}"]
   private_subnets      = local.private_subnets
 
-  public_subnet_names = [for az in local.availability_zones : "${var.prefix}-public-${az}"]
+  public_subnet_names = ["${var.prefix}-public-nat"]
   public_subnets      = local.public_subnets
 
   tags = var.tags

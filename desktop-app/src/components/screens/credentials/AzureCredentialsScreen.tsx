@@ -1,5 +1,5 @@
 import { CloudCredentials } from "../../../types";
-import { Alert, PermissionWarningDialog } from "../../ui";
+import { Alert, PermissionWarningDialog, PasswordInput } from "../../ui";
 import { useWizard } from "../../../hooks/useWizard";
 
 export function AzureCredentialsScreen() {
@@ -24,6 +24,9 @@ export function AzureCredentialsScreen() {
   const handleCredentialChange = (key: keyof CloudCredentials, value: string) => {
     setCredentials((prev) => ({ ...prev, [key]: value }));
   };
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const validateUuid = (val: string | undefined) => !val?.trim() || uuidRegex.test(val.trim());
 
   const canContinue = azureAuthMode === "cli" 
     ? !!(azureAccount && credentials.azure_subscription_id) 
@@ -176,6 +179,9 @@ export function AzureCredentialsScreen() {
                   onChange={(e) => handleCredentialChange("azure_tenant_id", e.target.value)}
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 />
+                {credentials.azure_tenant_id?.trim() && !validateUuid(credentials.azure_tenant_id) && (
+                  <div style={{ color: "var(--warning)", fontSize: "12px", marginTop: "4px" }}>Expected UUID format</div>
+                )}
                 <div className="help-text">Found in Azure Portal → Microsoft Entra ID.</div>
               </div>
               <div className="form-group">
@@ -207,8 +213,7 @@ export function AzureCredentialsScreen() {
               </div>
               <div className="form-group">
                 <label>Client Secret *</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={credentials.azure_client_secret || ""}
                   onChange={(e) => handleCredentialChange("azure_client_secret", e.target.value)}
                   placeholder="Service Principal Secret"

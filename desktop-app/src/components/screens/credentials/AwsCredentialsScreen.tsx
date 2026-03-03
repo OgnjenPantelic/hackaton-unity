@@ -1,5 +1,5 @@
 import { CloudCredentials } from "../../../types";
-import { Alert, PermissionWarningDialog } from "../../ui";
+import { Alert, PermissionWarningDialog, PasswordInput } from "../../ui";
 import { useWizard } from "../../../hooks/useWizard";
 
 export function AwsCredentialsScreen() {
@@ -188,8 +188,7 @@ export function AwsCredentialsScreen() {
               </div>
               <div className="form-group">
                 <label>AWS Secret Access Key *</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={credentials.aws_secret_access_key || ""}
                   onChange={(e) => handleCredentialChange("aws_secret_access_key", e.target.value)}
                   placeholder="Enter secret key"
@@ -198,8 +197,7 @@ export function AwsCredentialsScreen() {
             </div>
             <div className="form-group">
               <label>AWS Session Token (optional)</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={credentials.aws_session_token || ""}
                 onChange={(e) => handleCredentialChange("aws_session_token", e.target.value)}
                 placeholder="For temporary credentials"

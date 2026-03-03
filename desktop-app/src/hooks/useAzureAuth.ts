@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AzureAccount, AzureSubscription, CloudCredentials, CloudPermissionCheck } from "../types";
+import { AzureAccount, AzureSubscription, AzureVnet, CloudCredentials, CloudPermissionCheck } from "../types";
 
 export interface UseAzureAuthReturn {
   // State
@@ -8,6 +8,7 @@ export interface UseAzureAuthReturn {
   subscriptions: AzureSubscription[];
   resourceGroups: { name: string; location: string }[];
   resourceGroupsCacheKey: string;
+  vnets: AzureVnet[];
   authMode: "cli" | "service_principal";
   loading: boolean;
   error: string | null;
@@ -22,6 +23,7 @@ export interface UseAzureAuthReturn {
   loadAccount: () => Promise<AzureAccount | null>;
   loadSubscriptions: () => Promise<void>;
   loadResourceGroups: (subscriptionId: string, credentials?: CloudCredentials) => Promise<void>;
+  loadVnets: (credentials?: CloudCredentials) => Promise<void>;
   handleAzureLogin: () => Promise<void>;
   handleSubscriptionChange: (
     subscriptionId: string,
@@ -37,6 +39,7 @@ export function useAzureAuth(): UseAzureAuthReturn {
   const [subscriptions, setSubscriptions] = useState<AzureSubscription[]>([]);
   const [resourceGroups, setResourceGroups] = useState<{ name: string; location: string }[]>([]);
   const [resourceGroupsCacheKey, setResourceGroupsCacheKey] = useState<string>("");
+  const [vnets, setVnets] = useState<AzureVnet[]>([]);
   const [authMode, setAuthMode] = useState<"cli" | "service_principal">("cli");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +96,22 @@ export function useAzureAuth(): UseAzureAuthReturn {
       setResourceGroups([]);
     }
   }, [resourceGroupsCacheKey, resourceGroups.length, authMode]);
+
+  const loadVnets = useCallback(async (credentials?: CloudCredentials) => {
+    try {
+      let vnetList: AzureVnet[];
+
+      if (authMode === "service_principal" && credentials?.azure_client_id && credentials?.azure_client_secret) {
+        vnetList = await invoke<AzureVnet[]>("get_azure_vnets_sp", { credentials });
+      } else {
+        vnetList = await invoke<AzureVnet[]>("get_azure_vnets");
+      }
+
+      setVnets(vnetList);
+    } catch {
+      setVnets([]);
+    }
+  }, [authMode]);
 
   const handleAzureLogin = useCallback(async () => {
     setLoading(true);
@@ -160,6 +179,7 @@ export function useAzureAuth(): UseAzureAuthReturn {
     subscriptions,
     resourceGroups,
     resourceGroupsCacheKey,
+    vnets,
     authMode,
     loading,
     error,
@@ -172,6 +192,7 @@ export function useAzureAuth(): UseAzureAuthReturn {
     loadAccount,
     loadSubscriptions,
     loadResourceGroups,
+    loadVnets,
     handleAzureLogin,
     handleSubscriptionChange,
     checkPermissions,

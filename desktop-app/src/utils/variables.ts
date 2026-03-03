@@ -1,10 +1,15 @@
 import { TerraformVariable } from "../types";
 import { EXCLUDE_VARIABLES, VARIABLE_DISPLAY_NAMES, DEFAULTS } from "../constants";
+import { computeAwsSubnets } from "./cidr";
+
+function isValidJson(s: string): boolean {
+  try { JSON.parse(s); return true; } catch { return false; }
+}
 
 /**
  * Canonical section order for the configuration form.
  */
-export const SECTION_ORDER = ["Workspace", "Advanced: Network Configuration", "Tags"];
+export const SECTION_ORDER = ["Workspace", "Advanced: Network Configuration", "Security Group Egress Ports", "Security & Compliance", "Metastore & Catalog", "Optional Settings", "Tags"];
 
 /**
  * Field display order within each section (lower number = displayed first).
@@ -14,10 +19,13 @@ const FIELD_ORDER: Record<string, number> = {
   prefix: 1,
   workspace_name: 1,
   databricks_workspace_name: 1,
+  resource_prefix: 1,
+  resource_suffix: 1,
   region: 2,
   location: 2,
   google_region: 2,
   admin_user: 3,
+  aws_account_id: 4,
   resource_group_name: 4,
   root_storage_name: 5,
   workspace_sku: 6,
@@ -25,16 +33,86 @@ const FIELD_ORDER: Record<string, number> = {
   tags: 1,
   // Advanced: Network - toggle first, CIDRs, then existing resources
   create_new_vnet: 1,
-  cidr_block: 2,
-  cidr: 2,
-  subnet_cidr: 2,
-  subnet_public_cidr: 3,
-  subnet_private_cidr: 4,
-  vnet_name: 5,
-  vnet_resource_group_name: 6,
+  create_hub: 1,
+  network_configuration: 1,
+  create_workspace_vnet: 2,
+  create_workspace_resource_group: 3,
+  create_new_vpc: 1,
+  cidr_block: 4,
+  private_subnet_1_cidr: 5,
+  private_subnet_2_cidr: 6,
+  public_subnet_cidr: 7,
+  cidr: 4,
+  hub_vnet_cidr: 4,
+  vpc_cidr_range: 4,
+  subnet_cidr: 5,
+  subnet_public_cidr: 5,
+  subnet_private_cidr: 6,
+  private_subnets_cidr: 5,
+  privatelink_subnets_cidr: 6,
+  hub_resource_suffix: 7,
+  vnet_name: 8,
+  vnet_resource_group_name: 9,
+  existing_resource_group_name: 10,
+  sg_egress_ports: 10,
+  allowed_fqdns: 11,
+  hub_allowed_urls: 12,
+  cmk_enabled: 13,
   existing_vpc_id: 20,
   existing_subnet_ids: 21,
   existing_security_group_id: 22,
+  custom_vpc_id: 20,
+  custom_private_subnet_ids: 21,
+  custom_sg_id: 22,
+  custom_relay_vpce_id: 23,
+  custom_workspace_vpce_id: 24,
+  databricks_metastore_id: 25,
+  existing_ncc_id: 26,
+  existing_network_policy_id: 27,
+  // GCP SRA: network
+  nodes_ip_cidr_range: 3,
+  use_existing_vpc: 1,
+  existing_vpc_name: 2,
+  existing_subnet_name: 3,
+  harden_network: 10,
+  // GCP SRA: PSC fields
+  use_psc: 11,
+  google_pe_subnet: 12,
+  google_pe_subnet_ip_cidr_range: 13,
+  workspace_pe: 14,
+  relay_pe: 15,
+  relay_pe_ip_name: 16,
+  workspace_pe_ip_name: 17,
+  relay_service_attachment: 18,
+  workspace_service_attachment: 19,
+  use_existing_PSC_EP: 20,
+  use_existing_databricks_vpc_eps: 21,
+  existing_databricks_vpc_ep_workspace: 22,
+  existing_databricks_vpc_ep_relay: 23,
+  // GCP SRA: PAS
+  use_existing_pas: 24,
+  existing_pas_id: 25,
+  // GCP SRA: metastore
+  regional_metastore_id: 1,
+  // Unity Catalog (SRA)
+  existing_metastore_id: 1,
+  uc_catalog_name: 2,
+  // Security
+  enable_compliance_security_profile: 1,
+  compliance_standards: 2,
+  enable_security_analysis_tool: 3,
+  cmk_admin_arn: 4,
+  use_existing_cmek: 5,
+  key_name: 6,
+  keyring_name: 7,
+  cmek_resource_id: 8,
+  // Optional
+  metastore_exists: 1,
+  audit_log_delivery_exists: 2,
+  deployment_name: 3,
+  ip_addresses: 4,
+  account_console_url: 5,
+  existing_ncc_name: 27,
 };
 
 /**
@@ -42,8 +120,11 @@ const FIELD_ORDER: Record<string, number> = {
  * Returns sections in canonical order with fields sorted within each section.
  */
 export function groupVariablesBySection(
-  variables: TerraformVariable[]
+  variables: TerraformVariable[],
+  templateId?: string
 ): Record<string, TerraformVariable[]> {
+  const isSra = templateId?.includes("sra");
+  const SRA_UC_FIELDS = ["existing_metastore_id", "uc_catalog_name"];
   const sectionMap: Record<string, string> = {
     // Workspace
     prefix: "Workspace",
@@ -56,6 +137,9 @@ export function groupVariablesBySection(
     location: "Workspace",
     google_region: "Workspace",
     resource_group_name: "Workspace",
+    resource_prefix: "Workspace",
+    resource_suffix: "Workspace",
+    aws_account_id: "Workspace",
 
     // Tags
     tags: "Tags",
@@ -63,7 +147,11 @@ export function groupVariablesBySection(
     // Advanced: Network Configuration (all network + existing resource fields)
     vpc_id: "Advanced: Network Configuration",
     vpc_cidr_range: "Advanced: Network Configuration",
+    create_new_vpc: "Advanced: Network Configuration",
     cidr_block: "Advanced: Network Configuration",
+    private_subnet_1_cidr: "Advanced: Network Configuration",
+    private_subnet_2_cidr: "Advanced: Network Configuration",
+    public_subnet_cidr: "Advanced: Network Configuration",
     vnet_name: "Advanced: Network Configuration",
     vnet_resource_group_name: "Advanced: Network Configuration",
     cidr: "Advanced: Network Configuration",
@@ -76,16 +164,92 @@ export function groupVariablesBySection(
     subnet_cidr: "Advanced: Network Configuration",
     create_new_vnet: "Advanced: Network Configuration",
     security_group_ids: "Advanced: Network Configuration",
-    sg_egress_ports: "Advanced: Network Configuration",
+    sg_egress_ports: "Security Group Egress Ports",
     existing_vpc_id: "Advanced: Network Configuration",
     existing_subnet_ids: "Advanced: Network Configuration",
     existing_security_group_id: "Advanced: Network Configuration",
+    // SRA: Azure network fields
+    create_hub: "Advanced: Network Configuration",
+    hub_vnet_cidr: "Advanced: Network Configuration",
+    hub_resource_suffix: "Advanced: Network Configuration",
+    create_workspace_vnet: "Advanced: Network Configuration",
+    create_workspace_resource_group: "Advanced: Network Configuration",
+    existing_resource_group_name: "Advanced: Network Configuration",
+    cmk_enabled: "Advanced: Network Configuration",
+    allowed_fqdns: "Advanced: Network Configuration",
+    hub_allowed_urls: "Advanced: Network Configuration",
+    workspace_vnet: "Advanced: Network Configuration",
+    existing_workspace_vnet: "Advanced: Network Configuration",
+    existing_hub_vnet: "Advanced: Network Configuration",
+    existing_cmk_ids: "Advanced: Network Configuration",
+    databricks_metastore_id: "Advanced: Network Configuration",
+    existing_ncc_id: "Advanced: Network Configuration",
+    existing_network_policy_id: "Advanced: Network Configuration",
+    // SRA: AWS network fields
+    network_configuration: "Advanced: Network Configuration",
+    privatelink_subnets_cidr: "Advanced: Network Configuration",
+    custom_vpc_id: "Advanced: Network Configuration",
+    custom_private_subnet_ids: "Advanced: Network Configuration",
+    custom_sg_id: "Advanced: Network Configuration",
+    custom_relay_vpce_id: "Advanced: Network Configuration",
+    custom_workspace_vpce_id: "Advanced: Network Configuration",
+
+    // SRA: GCP network fields
+    nodes_ip_cidr_range: "Advanced: Network Configuration",
+    use_existing_vpc: "Advanced: Network Configuration",
+    existing_vpc_name: "Advanced: Network Configuration",
+    existing_subnet_name: "Advanced: Network Configuration",
+    harden_network: "Security & Compliance",
+    // SRA: GCP PSC fields
+    use_psc: "Advanced: Network Configuration",
+    google_pe_subnet: "Advanced: Network Configuration",
+    google_pe_subnet_ip_cidr_range: "Advanced: Network Configuration",
+    workspace_pe: "Advanced: Network Configuration",
+    relay_pe: "Advanced: Network Configuration",
+    relay_pe_ip_name: "Advanced: Network Configuration",
+    workspace_pe_ip_name: "Advanced: Network Configuration",
+    relay_service_attachment: "Advanced: Network Configuration",
+    workspace_service_attachment: "Advanced: Network Configuration",
+    use_existing_PSC_EP: "Advanced: Network Configuration",
+    use_existing_databricks_vpc_eps: "Advanced: Network Configuration",
+    existing_databricks_vpc_ep_workspace: "Advanced: Network Configuration",
+    existing_databricks_vpc_ep_relay: "Advanced: Network Configuration",
+    use_existing_pas: "Advanced: Network Configuration",
+    existing_pas_id: "Advanced: Network Configuration",
+    // SRA: GCP metastore
+    regional_metastore_id: "Optional Settings",
+
+    // Security & Compliance
+    enable_compliance_security_profile: "Security & Compliance",
+    compliance_standards: "Security & Compliance",
+    enable_security_analysis_tool: "Security & Compliance",
+    cmk_admin_arn: "Security & Compliance",
+    use_existing_cmek: "Security & Compliance",
+    key_name: "Security & Compliance",
+    keyring_name: "Security & Compliance",
+    cmek_resource_id: "Security & Compliance",
+    workspace_security_compliance: "Security & Compliance",
+
+    // Metastore & Catalog
+    metastore_exists: "Metastore & Catalog",
+    existing_metastore_id: "Metastore & Catalog",
+    uc_catalog_name: "Metastore & Catalog",
+
+    // Optional Settings
+    existing_ncc_name: "Advanced: Network Configuration",
+    audit_log_delivery_exists: "Optional Settings",
+    deployment_name: "Optional Settings",
+    ip_addresses: "Optional Settings",
+    account_console_url: "Optional Settings",
+    sat_configuration: "Optional Settings",
+    sat_service_principal: "Optional Settings",
   };
 
   // Build temporary map
   const tempSections: Record<string, TerraformVariable[]> = {};
   variables.forEach((v) => {
-    if ((EXCLUDE_VARIABLES as readonly string[]).includes(v.name)) return;
+    const isExcluded = (EXCLUDE_VARIABLES as readonly string[]).includes(v.name);
+    if (isExcluded && !(isSra && SRA_UC_FIELDS.includes(v.name))) return;
     const section = sectionMap[v.name] || "Other Configuration";
     if (!tempSections[section]) tempSections[section] = [];
     tempSections[section].push(v);
@@ -136,6 +300,7 @@ export function generateRandomSuffix(): string {
 interface FormDefaultsContext {
   azureUser?: string | null;
   gcpAccount?: string | null;
+  awsAccountId?: string | null;
 }
 
 /**
@@ -162,10 +327,18 @@ export function initializeFormDefaults(
       defaults[v.name] = DEFAULTS.PUBLIC_SUBNET_CIDR;
     } else if (v.name === "subnet_private_cidr") {
       defaults[v.name] = DEFAULTS.PRIVATE_SUBNET_CIDR;
-    } else if (v.name === "location") {
-      defaults[v.name] = DEFAULTS.AZURE_REGION;
-    } else if (v.name === "google_region") {
-      defaults[v.name] = v.default || DEFAULTS.GCP_REGION;
+    } else if (v.name === "private_subnet_1_cidr" || v.name === "private_subnet_2_cidr" || v.name === "public_subnet_cidr") {
+      const vpcCidr = variables.find(x => x.name === "cidr_block")?.default || "10.4.0.0/16";
+      const awsSubnets = computeAwsSubnets(vpcCidr);
+      if (awsSubnets) {
+        if (v.name === "private_subnet_1_cidr") defaults[v.name] = awsSubnets.private1Cidr;
+        else if (v.name === "private_subnet_2_cidr") defaults[v.name] = awsSubnets.private2Cidr;
+        else defaults[v.name] = awsSubnets.publicCidr;
+      }
+    } else if (v.name === "location" || v.name === "google_region" || v.name === "region" || v.name === "workspace_sku") {
+      defaults[v.name] = "";
+    } else if (v.name === "aws_account_id" && context.awsAccountId) {
+      defaults[v.name] = context.awsAccountId;
     } else if (v.name === "admin_user" && context.azureUser) {
       defaults[v.name] = context.azureUser;
     } else if (v.name === "admin_user" && context.gcpAccount) {
@@ -173,14 +346,73 @@ export function initializeFormDefaults(
     } else if (v.name === "create_new_resource_group") {
       defaults[v.name] = true;
     } else if (v.name === "vnet_name" || v.name === "vnet_resource_group_name") {
-      // Leave empty - only filled when using existing VNet
       defaults[v.name] = "";
-    } else if (v.default !== null) {
-      defaults[v.name] = v.default;
+    } else if (v.name === "resource_suffix") {
+      defaults[v.name] = `sra${randomSuffix}`;
+    } else if (v.name === "resource_prefix") {
+      defaults[v.name] = `dbx${randomSuffix}`;
+    } else if (v.name === "hub_resource_suffix") {
+      defaults[v.name] = `hub${shortSuffix}`;
+    } else if (["use_existing_cmek", "use_existing_pas", "metastore_exists", "audit_log_delivery_exists"].includes(v.name) && v.default === null) {
+      defaults[v.name] = false;
+    // --- AWS SRA defaults ---
+    } else if (v.name === "vpc_cidr_range") {
+      defaults[v.name] = "10.0.0.0/16";
+    } else if (v.name === "sg_egress_ports") {
+      defaults[v.name] = '["443", "3306", "6666", "8443", "8444", "8445", "8446", "8447", "8448", "8449", "8450", "8451"]';
+    } else if (v.name === "network_configuration") {
+      defaults[v.name] = "";
+    } else if (v.name === "cmk_admin_arn") {
+      defaults[v.name] = "";
+    // --- Azure SRA defaults ---
+    } else if (v.name === "hub_vnet_cidr") {
+      defaults[v.name] = "10.100.0.0/20";
+    // --- GCP SRA defaults ---
+    } else if (v.name === "key_name") {
+      defaults[v.name] = "sra-key";
+    } else if (v.name === "keyring_name") {
+      defaults[v.name] = "sra-keyring";
+    } else if (v.name === "workspace_pe") {
+      defaults[v.name] = "workspace-pe";
+    } else if (v.name === "relay_pe") {
+      defaults[v.name] = "relay-pe";
+    } else if (v.name === "google_pe_subnet") {
+      defaults[v.name] = "databricks-pe-subnet";
+    } else if (v.name === "account_console_url") {
+      defaults[v.name] = "https://accounts.gcp.databricks.com";
+    } else if (v.name === "ip_addresses") {
+      defaults[v.name] = '["0.0.0.0/0"]';
+    } else if (v.name === "relay_pe_ip_name" || v.name === "workspace_pe_ip_name") {
+      defaults[v.name] = "";
+    } else if (v.name === "relay_service_attachment" || v.name === "workspace_service_attachment") {
+      defaults[v.name] = "";
+    } else if (v.name === "nodes_ip_cidr_range") {
+      defaults[v.name] = "10.0.0.0/16";
+    } else if (v.name === "google_pe_subnet_ip_cidr_range") {
+      defaults[v.name] = "10.3.0.0/24";
+    } else if (v.name === "regional_metastore_id") {
+      defaults[v.name] = "";
+    } else if (v.default !== null && v.default !== undefined) {
+      const d = String(v.default).trim();
+      const isComplexHcl = (d.startsWith("{") || d.startsWith("[")) && !isValidJson(d);
+      const isTerraformNull = d === "null" || d.startsWith("null ");
+      if (!isComplexHcl && !isTerraformNull) {
+        defaults[v.name] = v.default;
+      }
     } else {
       defaults[v.name] = "";
     }
   });
+
+  // Pre-populate object decomposition sub-fields (not in variables list)
+  if (!defaults["workspace_vnet__cidr"]) defaults["workspace_vnet__cidr"] = "10.0.0.0/20";
+  if (!defaults["workspace_vnet__new_bits"]) defaults["workspace_vnet__new_bits"] = 2;
+
+  // Pre-populate list decomposition sub-fields (AWS SRA subnets)
+  if (!defaults["private_subnets_cidr_1"]) defaults["private_subnets_cidr_1"] = "10.0.0.0/18";
+  if (!defaults["private_subnets_cidr_2"]) defaults["private_subnets_cidr_2"] = "10.0.64.0/18";
+  if (!defaults["privatelink_subnets_cidr_1"]) defaults["privatelink_subnets_cidr_1"] = "10.0.128.0/28";
+  if (!defaults["privatelink_subnets_cidr_2"]) defaults["privatelink_subnets_cidr_2"] = "10.0.128.16/28";
 
   return defaults;
 }

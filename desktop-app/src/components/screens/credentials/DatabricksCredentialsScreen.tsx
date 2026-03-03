@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { CloudCredentials, DatabricksProfile } from "../../../types";
 import { CLOUDS } from "../../../constants";
-import { Alert } from "../../ui";
+import { Alert, PasswordInput } from "../../ui";
 import { useWizard } from "../../../hooks/useWizard";
 import { validateDatabricksCredentials } from "../../../utils/databricksValidation";
 
@@ -434,11 +434,7 @@ export function DatabricksCredentialsScreen() {
                 </div>
                 <div className="form-group" style={{ marginBottom: "16px" }}>
                   <label>Client Secret</label>
-                  <input
-                    type="password"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
+                  <PasswordInput
                     value={addSpProfileData.clientSecret}
                     onChange={(e) => setAddSpProfileData(prev => ({ ...prev, clientSecret: e.target.value }))}
                     placeholder="Service Principal Client Secret"
@@ -525,8 +521,7 @@ export function DatabricksCredentialsScreen() {
               </div>
               <div className="form-group">
                 <label>Client Secret *</label>
-                <input
-                  type="password"
+                <PasswordInput
                   value={credentials.databricks_client_secret || ""}
                   onChange={(e) => handleCredentialChange("databricks_client_secret", e.target.value)}
                   placeholder="Enter service principal secret"

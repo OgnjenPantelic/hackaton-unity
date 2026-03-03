@@ -1,9 +1,72 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { DeploymentStatus, Template, CloudCredentials, UnityCatalogConfig } from "../types";
-import { POLLING } from "../constants";
+import { POLLING, OBJECT_FIELD_DECOMPOSITION, LIST_FIELD_DECOMPOSITION } from "../constants";
 
 export type DeploymentStep = "ready" | "initializing" | "planning" | "review" | "deploying" | "complete" | "failed";
+
+/**
+ * Reconstructs complex Terraform objects from decomposed sub-field form values.
+ * Sub-fields use keys like `workspace_vnet__cidr`; this rebuilds them into
+ * `{ workspace_vnet: { cidr: "..." } }` for proper tfvars generation.
+ */
+function reconstructObjects(values: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  const usedKeys = new Set<string>();
+
+  for (const [parentName, subFields] of Object.entries(OBJECT_FIELD_DECOMPOSITION)) {
+    const obj: Record<string, any> = {};
+    let hasAnyValue = false;
+
+    for (const field of subFields) {
+      const value = values[field.key];
+      if (value !== undefined && value !== "" && value !== null) {
+        hasAnyValue = true;
+        let current = obj;
+        for (let i = 0; i < field.path.length - 1; i++) {
+          if (!current[field.path[i]]) current[field.path[i]] = {};
+          current = current[field.path[i]];
+        }
+        current[field.path[field.path.length - 1]] = value;
+      }
+      usedKeys.add(field.key);
+    }
+
+    usedKeys.add(parentName);
+    if (hasAnyValue) {
+      result[parentName] = obj;
+    }
+  }
+
+  // Reconstruct list(string) variables from decomposed sub-fields
+  for (const [parentName, subFields] of Object.entries(LIST_FIELD_DECOMPOSITION)) {
+    const items: string[] = [];
+    let hasAnyValue = false;
+
+    const sorted = [...subFields].sort((a, b) => a.index - b.index);
+    for (const field of sorted) {
+      const value = values[field.key];
+      if (value !== undefined && value !== "" && value !== null) {
+        hasAnyValue = true;
+        items.push(String(value));
+      }
+      usedKeys.add(field.key);
+    }
+
+    usedKeys.add(parentName);
+    if (hasAnyValue) {
+      result[parentName] = items;
+    }
+  }
+
+  for (const [key, value] of Object.entries(values)) {
+    if (!usedKeys.has(key)) {
+      result[key] = value;
+    }
+  }
+
+  return result;
+}
 
 export interface UseDeploymentReturn {
   // State
@@ -169,13 +232,14 @@ export function useDeployment(): UseDeploymentReturn {
       // Store credentials for later use in startApply
       credentialsRef.current = credentials;
 
-      // Build variables from form values for save_configuration (primitives, filtered for non-empty)
-      const values: Record<string, any> = {};
+      // Build variables from form values: filter empties, then reconstruct complex objects
+      const rawValues: Record<string, any> = {};
       for (const [key, value] of Object.entries(formValues)) {
         if (value !== undefined && value !== null && value !== "") {
-          values[key] = value;
+          rawValues[key] = value;
         }
       }
+      const values = reconstructObjects(rawValues);
 
       // Add Unity Catalog configuration if enabled
       if (ucConfig.enabled) {

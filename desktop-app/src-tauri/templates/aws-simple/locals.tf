@@ -1,25 +1,22 @@
-# Computed values from region and CIDR
 data "aws_availability_zones" "available" {
   state = "available"
 }
 
 locals {
-  # Use first 2 AZs in the region
   availability_zones = slice(data.aws_availability_zones.available.names, 0, 2)
-  
-  # Derive subnets from CIDR (e.g., 10.4.0.0/16 -> 10.4.1.0/24, 10.4.2.0/24, etc.)
-  cidr_prefix = join(".", slice(split(".", var.cidr_block), 0, 2))
-  
+  vpc_prefix         = tonumber(split("/", var.cidr_block)[1])
+
+  # Auto-computed defaults: private subnets = VPC/4, public subnet = /28
+  nat_newbits = 28 - local.vpc_prefix
+
   private_subnets = [
-    "${local.cidr_prefix}.1.0/24",
-    "${local.cidr_prefix}.2.0/24"
+    coalesce(var.private_subnet_1_cidr, cidrsubnet(var.cidr_block, 2, 0)),
+    coalesce(var.private_subnet_2_cidr, cidrsubnet(var.cidr_block, 2, 1)),
   ]
-  
+
   public_subnets = [
-    "${local.cidr_prefix}.101.0/24",
-    "${local.cidr_prefix}.102.0/24"
+    coalesce(var.public_subnet_cidr, cidrsubnet(var.cidr_block, local.nat_newbits, pow(2, local.nat_newbits - 1))),
   ]
-  
-  # Standard Databricks egress ports
+
   egress_ports = [443, 3306, 6666, 8443, 8444, 8445, 8446, 8447, 8448, 8449, 8450, 8451]
 }

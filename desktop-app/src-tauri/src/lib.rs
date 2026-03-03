@@ -43,6 +43,8 @@ pub fn run() {
             commands::get_azure_subscriptions,
             commands::get_azure_resource_groups,
             commands::get_azure_resource_groups_sp,
+            commands::get_azure_vnets,
+            commands::get_azure_vnets_sp,
             commands::azure_login,
             commands::set_azure_subscription,
             commands::clear_templates_cache,

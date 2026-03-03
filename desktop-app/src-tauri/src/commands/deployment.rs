@@ -382,6 +382,14 @@ pub fn save_configuration(
                         "google_project_name".to_string(),
                         serde_json::Value::String(project_id.clone()),
                     );
+                    merged_values.insert(
+                        "google_project".to_string(),
+                        serde_json::Value::String(project_id.clone()),
+                    );
+                    merged_values.insert(
+                        "project".to_string(),
+                        serde_json::Value::String(project_id.clone()),
+                    );
                 }
             }
 
@@ -400,6 +408,10 @@ pub fn save_configuration(
                 if !email.is_empty() {
                     merged_values.insert(
                         "google_service_account_email".to_string(),
+                        serde_json::Value::String(email.clone()),
+                    );
+                    merged_values.insert(
+                        "databricks_google_service_account".to_string(),
                         serde_json::Value::String(email.clone()),
                     );
                 }

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useWizard } from "../../hooks/useWizard";
 
 export function UnityCatalogConfigScreen() {
@@ -26,6 +27,8 @@ export function UnityCatalogConfigScreen() {
   );
   const metastoreName = ucPermissionCheck?.metastore.metastore_name;
   const metastoreId = ucPermissionCheck?.metastore.metastore_id;
+  const [catalogFormatted, setCatalogFormatted] = useState(false);
+  const [storageFormatted, setStorageFormatted] = useState(false);
 
   return (
     <div className="container">
@@ -189,14 +192,22 @@ export function UnityCatalogConfigScreen() {
                 autoCorrect="off"
                 spellCheck={false}
                 value={ucConfig.catalog_name}
-                onChange={(e) => setUcConfig(prev => ({
-                  ...prev,
-                  catalog_name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "")
-                }))}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const cleaned = raw.toLowerCase().replace(/[^a-z0-9_]/g, "");
+                  if (cleaned !== raw) {
+                    setCatalogFormatted(true);
+                    setTimeout(() => setCatalogFormatted(false), 2000);
+                  }
+                  setUcConfig(prev => ({ ...prev, catalog_name: cleaned }));
+                }}
                 placeholder="e.g., main_catalog"
               />
             <div className="help-text">
               Lowercase letters, numbers, and underscores only.
+              {catalogFormatted && (
+                <span style={{ color: "var(--accent)", marginLeft: "8px" }}>Auto-formatted</span>
+              )}
             </div>
               {selectedCloud === "gcp" && (
                 <div className="warning-box" style={{ 
@@ -225,12 +236,17 @@ export function UnityCatalogConfigScreen() {
                 autoCorrect="off"
                 spellCheck={false}
                 value={ucConfig.storage_name}
-                onChange={(e) => setUcConfig(prev => ({
-                  ...prev,
-                  storage_name: selectedCloud === "gcp" 
-                    ? e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "")
-                    : e.target.value.toLowerCase().replace(/[^a-z0-9]/g, "")
-                }))}
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  const cleaned = selectedCloud === "gcp"
+                    ? raw.toLowerCase().replace(/[^a-z0-9-]/g, "")
+                    : raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+                  if (cleaned !== raw) {
+                    setStorageFormatted(true);
+                    setTimeout(() => setStorageFormatted(false), 2000);
+                  }
+                  setUcConfig(prev => ({ ...prev, storage_name: cleaned }));
+                }}
                 placeholder={selectedCloud === "aws" ? "e.g., mycompany-databricks-uc" : selectedCloud === "gcp" ? "e.g., mycompany-databricks-uc" : "e.g., mycompanydbuc"}
               />
               <div className="help-text">
@@ -240,6 +256,9 @@ export function UnityCatalogConfigScreen() {
                   ? "A new GCS bucket will be created for this catalog. Must be globally unique (3-63 characters, lowercase letters, numbers, and hyphens)."
                   : "A new Storage Account will be created for this catalog. Must be globally unique (3-24 characters)."
                 }
+                {storageFormatted && (
+                  <span style={{ color: "var(--accent)", marginLeft: "8px" }}>Auto-formatted</span>
+                )}
               </div>
             </div>
           </>
@@ -247,7 +266,7 @@ export function UnityCatalogConfigScreen() {
       </div>
 
       {/* Continue Button */}
-      <div style={{ marginTop: "32px" }}>
+      <div style={{ marginTop: "32px", display: "flex", alignItems: "center", gap: "16px" }}>
         <button 
           className="btn btn-large btn-success" 
           onClick={onStartDeployment}
@@ -262,17 +281,22 @@ export function UnityCatalogConfigScreen() {
             "Create Workspace →"
           )}
         </button>
-        {ucConfig.enabled && !ucPermissionCheck?.can_create_catalog && ucPermissionCheck?.metastore.exists && (
-          <p style={{ marginTop: "12px", color: "#e67e22", fontSize: "0.9em" }}>
-            You may not have sufficient permissions. The workspace will be created, but catalog creation may fail.
-          </p>
-        )}
-        {!ucConfig.enabled && (
-          <p style={{ marginTop: "12px", color: "#888", fontSize: "0.9em" }}>
-            You can skip catalog creation and set it up later.
-          </p>
+        {!canProceed && ucConfig.enabled && (
+          <span style={{ color: "var(--text-muted)", fontSize: "13px" }}>
+            Fill in all required fields to continue
+          </span>
         )}
       </div>
+      {ucConfig.enabled && !ucPermissionCheck?.can_create_catalog && ucPermissionCheck?.metastore.exists && (
+        <p style={{ marginTop: "12px", color: "#e67e22", fontSize: "0.9em" }}>
+          You may not have sufficient permissions. The workspace will be created, but catalog creation may fail.
+        </p>
+      )}
+      {!ucConfig.enabled && (
+        <p style={{ marginTop: "12px", color: "var(--text-muted)", fontSize: "0.9em" }}>
+          Catalog setup is optional. You can create catalogs later through the Databricks workspace.
+        </p>
+      )}
     </div>
   );
 }

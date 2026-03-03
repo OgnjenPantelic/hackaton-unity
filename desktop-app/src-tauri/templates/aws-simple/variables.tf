@@ -31,15 +31,38 @@ variable "cidr_block" {
   default     = "10.4.0.0/16"
 }
 
+variable "private_subnet_1_cidr" {
+  description = "CIDR for private subnet in AZ 1 (Databricks compute). Leave empty to auto-calculate as VPC/4."
+  type        = string
+  default     = ""
+}
+
+variable "private_subnet_2_cidr" {
+  description = "CIDR for private subnet in AZ 2 (Databricks compute). Leave empty to auto-calculate as VPC/4."
+  type        = string
+  default     = ""
+}
+
+variable "public_subnet_cidr" {
+  description = "CIDR for public subnet (NAT gateway). Leave empty to auto-calculate as /28."
+  type        = string
+  default     = ""
+}
+
 variable "tags" {
   description = "Tags to apply to resources"
   type        = map(string)
   default     = {}
 }
 
-# Advanced: Use existing VPC (leave empty to create new)
+variable "create_new_vpc" {
+  description = "Whether to create a new VPC or use an existing one"
+  type        = bool
+  default     = true
+}
+
 variable "existing_vpc_id" {
-  description = "Existing VPC ID (leave empty to create new VPC)"
+  description = "Existing VPC ID (required if not creating new VPC)"
   type        = string
   default     = ""
 }

@@ -46,6 +46,7 @@ export interface WizardContextValue {
   dependencies: Record<string, DependencyStatus>;
   installingTerraform: boolean;
   installTerraform: () => Promise<void>;
+  recheckDependencies: () => Promise<void>;
   continueFromDependencies: () => Promise<void>;
 
   // Templates
@@ -208,6 +209,10 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const loadAzureVnets = async () => {
+    await azure.loadVnets(credentials);
+  };
+
   const installTerraform = async () => {
     setInstallingTerraform(true);
     setError(null);
@@ -293,6 +298,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
         const defaults = initializeFormDefaults(vars, {
           azureUser: azure.account?.user,
           gcpAccount: gcp.validation?.account,
+          awsAccountId: aws.identity?.account,
         });
         setFormValues(defaults);
         setTagPairs([]);
@@ -300,6 +306,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
 
       if (selectedCloud === CLOUDS.AZURE) {
         loadAzureResourceGroups();
+        loadAzureVnets();
       }
     } catch (e: unknown) {
       setError(`Failed to load template: ${String(e)}`);
@@ -619,7 +626,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   const value: WizardContextValue = {
     screen, setScreen, goBack,
     selectedCloud, loadingCloud, selectCloud,
-    dependencies, installingTerraform, installTerraform, continueFromDependencies,
+    dependencies, installingTerraform, installTerraform, recheckDependencies: checkDependencies, continueFromDependencies,
     templates, selectedTemplate, selectTemplate,
     credentials, setCredentials,
     aws, azure, gcp,

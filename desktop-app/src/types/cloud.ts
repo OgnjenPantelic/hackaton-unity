@@ -62,6 +62,13 @@ export interface GcpValidation {
   impersonated_account: string | null;
 }
 
+export interface AzureVnet {
+  name: string;
+  resource_group: string;
+  location: string;
+  address_prefixes: string[];
+}
+
 export interface CloudPermissionCheck {
   has_all_permissions: boolean;
   checked_permissions: string[];

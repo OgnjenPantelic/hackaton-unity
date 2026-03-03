@@ -299,6 +299,179 @@ pub async fn get_azure_resource_groups_sp(
     Ok(groups)
 }
 
+/// Azure Virtual Network descriptor.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AzureVnet {
+    pub name: String,
+    pub resource_group: String,
+    pub location: String,
+    pub address_prefixes: Vec<String>,
+}
+
+/// List Azure VNets in the current subscription using `az network vnet list`.
+#[tauri::command]
+pub fn get_azure_vnets() -> Result<Vec<AzureVnet>, String> {
+    use std::process::Command;
+
+    let az_path = dependencies::find_azure_cli_path()
+        .ok_or_else(|| crate::errors::cli_not_found("Azure CLI"))?;
+
+    let output = Command::new(&az_path)
+        .args(["network", "vnet", "list", "--output", "json"])
+        .output()
+        .map_err(|e| format!("Failed to run Azure CLI: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to list VNets: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse VNets: {}", e))?;
+
+    let vnets: Vec<AzureVnet> = json
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .map(|v| AzureVnet {
+            name: v["name"].as_str().unwrap_or("").to_string(),
+            resource_group: v["resourceGroup"].as_str().unwrap_or("").to_string(),
+            location: v["location"].as_str().unwrap_or("").to_string(),
+            address_prefixes: v["addressSpace"]["addressPrefixes"]
+                .as_array()
+                .unwrap_or(&vec![])
+                .iter()
+                .filter_map(|p| p.as_str().map(|s| s.to_string()))
+                .collect(),
+        })
+        .collect();
+
+    Ok(vnets)
+}
+
+/// List Azure VNets using Service Principal credentials via Azure ARM REST API.
+#[tauri::command]
+pub async fn get_azure_vnets_sp(
+    credentials: CloudCredentials,
+) -> Result<Vec<AzureVnet>, String> {
+    let tenant_id = credentials
+        .azure_tenant_id
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .ok_or("Azure Tenant ID is required")?;
+
+    let client_id = credentials
+        .azure_client_id
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .ok_or("Azure Client ID is required")?;
+
+    let client_secret = credentials
+        .azure_client_secret
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .ok_or("Azure Client Secret is required")?;
+
+    let subscription_id = credentials
+        .azure_subscription_id
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .ok_or("Azure Subscription ID is required")?;
+
+    let http_client = http_client()?;
+
+    let token_url = format!(
+        "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
+        tenant_id
+    );
+
+    let token_response = http_client
+        .post(&token_url)
+        .form(&[
+            ("grant_type", "client_credentials"),
+            ("client_id", client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("scope", "https://management.azure.com/.default"),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get Azure AD token: {}", e))?;
+
+    if !token_response.status().is_success() {
+        let status = token_response.status();
+        let error_text = token_response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Azure AD authentication failed ({}): {}",
+            status, error_text
+        ));
+    }
+
+    let token_json: serde_json::Value = token_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Azure AD token response: {}", e))?;
+
+    let access_token = token_json["access_token"]
+        .as_str()
+        .ok_or("No access token in Azure AD response")?;
+
+    let vnet_url = format!(
+        "https://management.azure.com/subscriptions/{}/providers/Microsoft.Network/virtualNetworks?api-version=2023-05-01",
+        subscription_id
+    );
+
+    let vnet_response = http_client
+        .get(&vnet_url)
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to list VNets: {}", e))?;
+
+    if !vnet_response.status().is_success() {
+        let status = vnet_response.status();
+        let error_text = vnet_response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Failed to list VNets ({}): {}",
+            status, error_text
+        ));
+    }
+
+    let vnet_json: serde_json::Value = vnet_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse VNets response: {}", e))?;
+
+    let vnets: Vec<AzureVnet> = vnet_json["value"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .map(|v| {
+            let id_str = v["id"].as_str().unwrap_or("");
+            let rg = id_str
+                .split("/resourceGroups/")
+                .nth(1)
+                .and_then(|s| s.split('/').next())
+                .unwrap_or("")
+                .to_string();
+
+            AzureVnet {
+                name: v["name"].as_str().unwrap_or("").to_string(),
+                resource_group: rg,
+                location: v["location"].as_str().unwrap_or("").to_string(),
+                address_prefixes: v["properties"]["addressSpace"]["addressPrefixes"]
+                    .as_array()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .filter_map(|p| p.as_str().map(|s| s.to_string()))
+                    .collect(),
+            }
+        })
+        .collect();
+
+    Ok(vnets)
+}
+
 /// Check Azure RBAC permissions by verifying role assignments.
 #[tauri::command]
 pub async fn check_azure_permissions(

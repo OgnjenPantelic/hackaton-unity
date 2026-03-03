@@ -4,6 +4,7 @@ export type {
   AwsIdentity,
   AzureSubscription,
   AzureAccount,
+  AzureVnet,
   GcpValidation,
   CloudPermissionCheck,
 } from "./cloud";

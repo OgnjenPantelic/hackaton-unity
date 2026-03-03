@@ -3,7 +3,13 @@ import { CLOUDS, CLOUD_DISPLAY_NAMES } from '../../constants';
 import { useWizard } from '../../hooks/useWizard';
 
 const CloudSelectionScreen: React.FC = () => {
-  const { loadingCloud, selectCloud, goBack } = useWizard();
+  const { loadingCloud, selectCloud, selectedCloud, goBack } = useWizard();
+
+  const clouds = [
+    { id: CLOUDS.AZURE, name: "Azure", desc: "Deploy on Microsoft Azure with VNet injection and Unity Catalog support" },
+    { id: CLOUDS.AWS, name: "AWS", desc: "Deploy on Amazon Web Services with customer-managed VPC and Unity Catalog support" },
+    { id: CLOUDS.GCP, name: "GCP", desc: "Deploy on Google Cloud Platform with customer-managed VPC and Unity Catalog support" },
+  ];
 
   return (
     <div className="container">
@@ -20,40 +26,37 @@ const CloudSelectionScreen: React.FC = () => {
           <div className="loading-content">
             <span className="spinner large" />
             <div>Checking {CLOUD_DISPLAY_NAMES[loadingCloud] || loadingCloud} dependencies...</div>
+            <button
+              className="btn btn-secondary"
+              onClick={goBack}
+              style={{ marginTop: "16px" }}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
 
       <div className="cloud-selection">
-        <div 
-          className={`cloud-card azure ${loadingCloud ? "disabled" : ""}`}
-          onClick={() => !loadingCloud && selectCloud(CLOUDS.AZURE)}
-        >
-          <div className="cloud-name">Azure</div>
-          <div className="cloud-description">
-            Deploy on Microsoft Azure with VNet injection and Unity Catalog support
-          </div>
-        </div>
-
-        <div 
-          className={`cloud-card aws ${loadingCloud ? "disabled" : ""}`}
-          onClick={() => !loadingCloud && selectCloud(CLOUDS.AWS)}
-        >
-          <div className="cloud-name">AWS</div>
-          <div className="cloud-description">
-            Deploy on Amazon Web Services with customer-managed VPC and Unity Catalog support
-          </div>
-        </div>
-
-        <div 
-          className={`cloud-card gcp ${loadingCloud ? "disabled" : ""}`}
-          onClick={() => !loadingCloud && selectCloud(CLOUDS.GCP)}
-        >
-          <div className="cloud-name">GCP</div>
-          <div className="cloud-description">
-            Deploy on Google Cloud Platform with customer-managed VPC and Unity Catalog support
-          </div>
-        </div>
+        {clouds.map(({ id, name, desc }) => (
+          <button
+            key={id}
+            className={`cloud-card ${id} ${loadingCloud ? "disabled" : ""} ${selectedCloud === id ? "selected" : ""}`}
+            onClick={() => !loadingCloud && selectCloud(id)}
+            disabled={!!loadingCloud}
+            type="button"
+          >
+            <div className="cloud-name">{name}</div>
+            <div className="cloud-description">{desc}</div>
+            {selectedCloud === id && (
+              <div style={{ position: "absolute", top: 12, right: 12, color: "var(--success)", fontSize: "14px" }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+              </div>
+            )}
+          </button>
+        ))}
       </div>
     </div>
   );
