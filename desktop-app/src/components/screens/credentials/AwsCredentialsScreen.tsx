@@ -20,6 +20,7 @@ export function AwsCredentialsScreen() {
   const onProfileChange = ctx.handleAwsProfileChange;
   const onValidateAndContinue = ctx.validateAndContinueFromAwsCredentials;
   const onContinueWithWarning = ctx.continueFromCloudWithWarning;
+  const onRefreshProfiles = ctx.loadAwsProfiles;
   const onBack = ctx.goBack;
   const handleCredentialChange = (key: keyof CloudCredentials, value: string) => {
     setCredentials((prev) => ({ ...prev, [key]: value }));
@@ -92,12 +93,23 @@ export function AwsCredentialsScreen() {
               </p>
             </Alert>
             {awsProfiles.length === 0 ? (
-              <Alert type="warning">
-                <strong>No AWS profiles found.</strong>
-                <p style={{ margin: "8px 0 0 0", fontSize: "13px" }}>
-                  Please set up AWS CLI following the instructions above, or switch to "Use Access Keys".
-                </p>
-              </Alert>
+              <div>
+                <Alert type="warning">
+                  <strong>No AWS profiles found.</strong>
+                  <p style={{ margin: "8px 0 0 0", fontSize: "13px" }}>
+                    Please set up AWS CLI following the instructions above, then click "Verify", or switch to "Use Access Keys".
+                  </p>
+                </Alert>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ marginTop: "12px" }}
+                  onClick={onRefreshProfiles}
+                  disabled={awsLoading}
+                >
+                  {awsLoading ? "Verifying..." : "Verify"}
+                </button>
+              </div>
             ) : (
               <div className="two-column">
                 <div className="form-group">

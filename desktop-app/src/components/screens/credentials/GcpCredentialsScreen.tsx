@@ -218,7 +218,7 @@ export function GcpCredentialsScreen() {
         }
         if (validation.impersonated_account !== credentials.gcp_service_account_email?.trim()) {
           setGcpAuthError(
-            `Impersonation mismatch: gcloud is impersonating '${validation.impersonated_account}' but you entered '${credentials.gcp_service_account_email}'.\n\nClick 'Verify Credentials' to auto-fill the correct service account.`
+            `Impersonation mismatch: gcloud is impersonating '${validation.impersonated_account}' but you entered '${credentials.gcp_service_account_email}'.\n\nClick 'Verify' to auto-fill the correct service account.`
           );
           setGcpLoading(false);
           return;
@@ -375,7 +375,7 @@ export function GcpCredentialsScreen() {
                   onClick={checkGcpCredentials}
                   disabled={gcpLoading}
                 >
-                  {gcpLoading ? "Verifying..." : "Verify Credentials"}
+                  {gcpLoading ? "Verifying..." : "Verify"}
                 </button>
               </div>
             </div>
@@ -551,7 +551,7 @@ export function GcpCredentialsScreen() {
                             onClick={checkGcpCredentials}
                             disabled={gcpLoading}
                           >
-                            {gcpLoading ? "Checking..." : "Verify Credentials"}
+                            {gcpLoading ? "Verifying..." : "Verify"}
                           </button>
                         </div>
                       ) : (
