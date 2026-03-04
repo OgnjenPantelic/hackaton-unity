@@ -473,7 +473,7 @@ pub fn check_aws_cli() -> DependencyStatus {
         installed: false,
         version: None,
         required: false,
-        install_url: "https://aws.amazon.com/cli/".to_string(),
+        install_url: "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html".to_string(),
     };
 
     if let Some(aws_path) = find_aws_cli_path() {
