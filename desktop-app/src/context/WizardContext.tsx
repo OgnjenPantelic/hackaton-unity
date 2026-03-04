@@ -509,6 +509,8 @@ export function WizardProvider({ children }: { children: ReactNode }) {
         if (!deployment.deploymentStatus?.running) {
           setScreen("unity-catalog-config");
           deployment.setDeploymentStep("ready");
+          deployment.setDeploymentName("");
+          deployment.setTemplatePath("");
         }
         break;
     }
