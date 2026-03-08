@@ -1,6 +1,6 @@
 [package]
 name = "databricks-deployer"
-version = "1.0.13"
+version = "1.0.14"
 description = "Deploy Databricks workspaces with ease"
 authors = ["Databricks"]
 edition = "2021"
