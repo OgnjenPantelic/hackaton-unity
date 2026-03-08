@@ -75,6 +75,12 @@ variable "harden_network" {
   default     = true
 }
 
+variable "control_plane_ips" {
+  description = "Regional Databricks control-plane IP/CIDR ranges (required when harden_network=true and use_psc=false). See https://docs.databricks.com/gcp/en/resources/ip-domain-region"
+  type        = list(string)
+  default     = []
+}
+
 # =============================================================================
 # Private Service Connect (PSC) Configuration
 # =============================================================================

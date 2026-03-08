@@ -15,8 +15,10 @@ export function AzureCredentialsScreen() {
   const { checkingPermissions, showPermissionWarning, setShowPermissionWarning } = ctx;
   const { permissionWarningAcknowledged, setPermissionWarningAcknowledged } = ctx;
   const validationAttempted = ctx.azureValidationAttempted;
+  const azureLoginInProgress = ctx.azure.loginInProgress;
   const onCheckAccount = ctx.checkAzureAccount;
   const onLogin = ctx.handleAzureLogin;
+  const onCancelLogin = ctx.azure.cancelLogin;
   const onSubscriptionChange = ctx.handleAzureSubscriptionChange;
   const onValidateAndContinue = ctx.validateAndContinueFromAzureCredentials;
   const onContinueWithWarning = ctx.continueFromCloudWithWarning;
@@ -43,13 +45,13 @@ export function AzureCredentialsScreen() {
         Configure your Azure credentials for deploying resources.
       </p>
 
-      {azureLoading && (
+      {azureLoading && !azureLoginInProgress && (
         <Alert type="loading">Verifying Azure credentials...</Alert>
       )}
 
       {azureAuthError && <Alert type="error" style={{ whiteSpace: "pre-line" }}>{azureAuthError}</Alert>}
 
-      <div className="form-section" style={{ opacity: azureLoading ? 0.6 : 1 }}>
+      <div className="form-section" style={{ opacity: azureLoading && !azureLoginInProgress ? 0.6 : 1 }}>
         <h3>Authentication Method</h3>
         
         <div className="auth-mode-selector">
@@ -93,36 +95,52 @@ export function AzureCredentialsScreen() {
             <div className="form-group">
               <label>Status</label>
               <div className="auth-status">
-                {azureLoading && <span className="spinner" />}
-                {azureAccount && (
+                {azureLoginInProgress && <span className="spinner" />}
+                {azureLoginInProgress && (
+                  <span style={{ color: "#888" }}>Waiting for browser login...</span>
+                )}
+                {!azureLoginInProgress && azureLoading && <span className="spinner" />}
+                {!azureLoginInProgress && azureAccount && (
                   <span className="success">
                     Logged in as: {azureAccount.user}
                   </span>
                 )}
-                {azureAuthError && !azureLoading && !azureAccount && (
+                {!azureLoginInProgress && azureAuthError && !azureLoading && !azureAccount && (
                   <span className="error">{azureAuthError}</span>
                 )}
-                {!azureAccount && !azureAuthError && !azureLoading && (
+                {!azureLoginInProgress && !azureAccount && !azureAuthError && !azureLoading && (
                   <span style={{ color: "#888" }}>Click Verify or Login to check credentials.</span>
                 )}
               </div>
               <div style={{ marginTop: "8px", display: "flex", gap: "8px" }}>
-                <button
-                  type="button"
-                  className="btn btn-small btn-secondary"
-                  onClick={onCheckAccount}
-                  disabled={azureLoading}
-                >
-                  {azureLoading ? "Verifying..." : "Verify"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-small"
-                  onClick={onLogin}
-                  disabled={azureLoading}
-                >
-                  Login
-                </button>
+                {azureLoginInProgress ? (
+                  <button
+                    type="button"
+                    className="btn btn-small btn-secondary"
+                    onClick={onCancelLogin}
+                  >
+                    Cancel
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      className="btn btn-small btn-secondary"
+                      onClick={onCheckAccount}
+                      disabled={azureLoading || checkingPermissions}
+                    >
+                      {azureLoading ? "Verifying..." : "Verify"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-small"
+                      onClick={onLogin}
+                      disabled={azureLoading || checkingPermissions}
+                    >
+                      {azureAccount ? "Switch Account" : "Login"}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 

@@ -10,6 +10,7 @@ export interface UseAwsAuthReturn {
   identity: AwsIdentity | null;
   authMode: "profile" | "keys";
   loading: boolean;
+  loginInProgress: boolean;
   error: string | null;
   permissionCheck: CloudPermissionCheck | null;
   checkingPermissions: boolean;
@@ -22,6 +23,7 @@ export interface UseAwsAuthReturn {
   loadProfiles: () => Promise<AwsProfile[]>;
   checkIdentity: (profile: string) => Promise<void>;
   handleSsoLogin: (profile: string) => Promise<void>;
+  cancelSsoLogin: () => Promise<void>;
   handleProfileChange: (
     profile: string,
     setCredentials: React.Dispatch<React.SetStateAction<CloudCredentials>>
@@ -36,6 +38,7 @@ export function useAwsAuth(): UseAwsAuthReturn {
   const [identity, setIdentity] = useState<AwsIdentity | null>(null);
   const [authMode, setAuthMode] = useState<"profile" | "keys">("profile");
   const [loading, setLoading] = useState(false);
+  const [loginInProgress, setLoginInProgress] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [permissionCheck, setPermissionCheck] = useState<CloudPermissionCheck | null>(null);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
@@ -90,12 +93,14 @@ export function useAwsAuth(): UseAwsAuthReturn {
   const handleSsoLogin = useCallback(
     async (profile: string) => {
       setLoading(true);
+      setLoginInProgress(true);
       setError(null);
       clearSsoPolling();
 
       try {
         await invoke("aws_sso_login", { profile });
 
+        setLoginInProgress(false);
         startPolling(
           async () => {
             const id = await invoke<AwsIdentity>("get_aws_identity", { profile });
@@ -118,12 +123,26 @@ export function useAwsAuth(): UseAwsAuthReturn {
           }
         );
       } catch (e: unknown) {
-        setError(String(e));
+        const msg = String(e);
+        if (msg !== "LOGIN_CANCELLED") {
+          setError(msg);
+        }
+        setLoginInProgress(false);
         setLoading(false);
       }
     },
     [clearSsoPolling, startPolling, isMountedRef]
   );
+
+  const cancelSsoLogin = useCallback(async () => {
+    try {
+      await invoke("cancel_cli_login");
+    } catch {
+      // Best-effort cancellation
+    }
+    setLoginInProgress(false);
+    clearSsoPolling();
+  }, [clearSsoPolling]);
 
   const checkPermissions = useCallback(
     async (credentials: CloudCredentials): Promise<CloudPermissionCheck> => {
@@ -161,6 +180,7 @@ export function useAwsAuth(): UseAwsAuthReturn {
     identity,
     authMode,
     loading,
+    loginInProgress,
     error,
     permissionCheck,
     checkingPermissions,
@@ -171,6 +191,7 @@ export function useAwsAuth(): UseAwsAuthReturn {
     loadProfiles,
     checkIdentity,
     handleSsoLogin,
+    cancelSsoLogin,
     handleProfileChange,
     checkPermissions,
     clearError,

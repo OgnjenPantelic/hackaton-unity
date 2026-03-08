@@ -38,7 +38,8 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "templates/**/*"
+      "templates/**/*",
+      "templates/**/.*"
     ],
     "macOS": {
       "minimumSystemVersion": "10.15",

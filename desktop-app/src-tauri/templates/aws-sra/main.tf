@@ -139,7 +139,7 @@ module "unity_catalog_catalog_creation" {
   depends_on = [module.unity_catalog_metastore_assignment]
 }
 
-# Restrictive Root Buckt Policy
+# Restrictive Root Bucket Policy
 module "restrictive_root_bucket" {
   source = "./modules/databricks_workspace/restrictive_root_bucket"
   providers = {

@@ -206,9 +206,16 @@ fn ensure_initial_commit(dir: &Path, app: &AppHandle, include_values: bool) -> R
     }
 
     let (staged, _, _) = run_git(dir, &["diff", "--cached", "--name-only"])?;
-    if staged.lines().any(|f| f == "terraform.tfvars") {
-        let _ = run_git(dir, &["rm", "--cached", "terraform.tfvars"]);
-        debug_log!("[github] Removed terraform.tfvars from staging — .gitignore may be stale");
+    for file in staged.lines() {
+        let dominated = file == "terraform.tfvars"
+            || file.ends_with(".tfstate")
+            || file.contains(".tfstate.")
+            || file.starts_with(".terraform/")
+            || file.starts_with(".terraform\\");
+        if dominated {
+            let _ = run_git(dir, &["rm", "--cached", file]);
+            debug_log!("[github] Removed {} from staging — sensitive/large file", file);
+        }
     }
 
     let (_, stderr, ok) = run_git(
@@ -223,8 +230,10 @@ fn ensure_initial_commit(dir: &Path, app: &AppHandle, include_values: bool) -> R
     Ok(true)
 }
 
-/// Ensure .gitignore properly excludes *.tfvars before any git operations.
-/// Appends the rules if they're missing (safety net for older templates).
+/// Ensure .gitignore properly excludes sensitive and large Terraform files
+/// before any git operations. Appends rules for .terraform/, *.tfvars,
+/// *.tfvars.json (with !*.tfvars.example exemption), and *.tfstate if missing
+/// (safety net for older templates or manually-created deployment directories).
 fn ensure_tfvars_ignored(deployment_dir: &Path) -> Result<(), String> {
     let gitignore_path = deployment_dir.join(".gitignore");
 
@@ -234,22 +243,52 @@ fn ensure_tfvars_ignored(deployment_dir: &Path) -> Result<(), String> {
         String::new()
     };
 
+    let mut addition = String::new();
+
+    let has_terraform_dir_rule = content.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed == ".terraform/" || trimmed == ".terraform"
+    });
+    if !has_terraform_dir_rule {
+        addition.push_str(
+            "\n# Terraform providers and plugins (large binaries)\n.terraform/\n",
+        );
+        debug_log!("[github] Will add .terraform/ rule to .gitignore");
+    }
+
     let has_tfvars_rule = content.lines().any(|line| {
         let trimmed = line.trim();
         trimmed == "*.tfvars" || trimmed == "*.tfvars.json"
     });
-
     if !has_tfvars_rule {
-        let addition = if content.is_empty() || content.ends_with('\n') {
-            "# Terraform variable files (may contain secrets)\n*.tfvars\n*.tfvars.json\n!*.tfvars.example\n"
+        addition.push_str(
+            "\n# Terraform variable files (may contain secrets)\n*.tfvars\n*.tfvars.json\n!*.tfvars.example\n",
+        );
+        debug_log!("[github] Will add *.tfvars rules to .gitignore");
+    }
+
+    let has_tfstate_rule = content.lines().any(|line| {
+        let trimmed = line.trim();
+        trimmed == "*.tfstate" || trimmed == "*.tfstate.*"
+    });
+    if !has_tfstate_rule {
+        addition.push_str(
+            "\n# Terraform state (contains secrets)\n*.tfstate\n*.tfstate.*\n",
+        );
+        debug_log!("[github] Will add *.tfstate rules to .gitignore");
+    }
+
+    if !addition.is_empty() {
+        let separator = if content.is_empty() || content.ends_with('\n') {
+            ""
         } else {
-            "\n\n# Terraform variable files (may contain secrets)\n*.tfvars\n*.tfvars.json\n!*.tfvars.example\n"
+            "\n"
         };
 
-        fs::write(&gitignore_path, format!("{}{}", content, addition))
+        fs::write(&gitignore_path, format!("{}{}{}", content, separator, addition))
             .map_err(|e| format!("Failed to update .gitignore: {}", e))?;
 
-        debug_log!("[github] Appended *.tfvars rules to .gitignore");
+        debug_log!("[github] Updated .gitignore with missing ignore rules");
     }
 
     Ok(())
@@ -974,9 +1013,12 @@ mod tests {
         ensure_tfvars_ignored(dir.path()).unwrap();
 
         let content = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(content.contains(".terraform/"));
         assert!(content.contains("*.tfvars"));
         assert!(content.contains("*.tfvars.json"));
         assert!(content.contains("!*.tfvars.example"));
+        assert!(content.contains("*.tfstate"));
+        assert!(content.contains("*.tfstate.*"));
     }
 
     #[test]
@@ -989,18 +1031,61 @@ mod tests {
         let content = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
         assert!(content.starts_with(".terraform/"));
         assert!(content.contains("*.tfvars"));
+        assert!(content.contains("*.tfstate"));
+        assert!(content.contains("*.tfstate.*"));
     }
 
     #[test]
-    fn ensure_tfvars_ignored_skips_when_present() {
+    fn ensure_tfvars_ignored_skips_when_all_present() {
         let dir = tempfile::tempdir().unwrap();
-        let original = "*.tfvars\n*.tfvars.json\n";
+        let original = ".terraform/\n*.tfvars\n*.tfvars.json\n*.tfstate\n*.tfstate.*\n";
         fs::write(dir.path().join(".gitignore"), original).unwrap();
 
         ensure_tfvars_ignored(dir.path()).unwrap();
 
         let content = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
         assert_eq!(content, original);
+    }
+
+    #[test]
+    fn ensure_tfvars_ignored_adds_tfstate_when_only_tfvars_present() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".gitignore"), ".terraform/\n*.tfvars\n*.tfvars.json\n").unwrap();
+
+        ensure_tfvars_ignored(dir.path()).unwrap();
+
+        let content = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(content.contains(".terraform/"));
+        assert!(content.contains("*.tfvars"));
+        assert!(content.contains("*.tfstate"));
+        assert!(content.contains("*.tfstate.*"));
+    }
+
+    #[test]
+    fn ensure_tfvars_ignored_adds_tfvars_when_only_tfstate_present() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".gitignore"), ".terraform/\n*.tfstate\n*.tfstate.*\n").unwrap();
+
+        ensure_tfvars_ignored(dir.path()).unwrap();
+
+        let content = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(content.contains(".terraform/"));
+        assert!(content.contains("*.tfvars"));
+        assert!(content.contains("*.tfvars.json"));
+        assert!(content.contains("*.tfstate"));
+    }
+
+    #[test]
+    fn ensure_tfvars_ignored_adds_terraform_dir_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join(".gitignore"), "*.tfvars\n*.tfstate\n*.tfstate.*\n").unwrap();
+
+        ensure_tfvars_ignored(dir.path()).unwrap();
+
+        let content = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
+        assert!(content.contains(".terraform/"));
+        assert!(content.contains("*.tfvars"));
+        assert!(content.contains("*.tfstate"));
     }
 
     // ── parse_tfvars_file ────────────────────────────────────────────────

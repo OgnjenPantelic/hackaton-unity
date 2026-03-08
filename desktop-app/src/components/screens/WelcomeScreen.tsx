@@ -1,8 +1,22 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
 import { useWizard } from '../../hooks/useWizard';
 
+const GearIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>
+);
+
+const FolderIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+  </svg>
+);
+
 const RocketIcon = () => (
-  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff6b35" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
     <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
     <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
@@ -11,14 +25,14 @@ const RocketIcon = () => (
 );
 
 const ShieldIcon = () => (
-  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff6b35" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
     <path d="m9 12 2 2 4-4" />
   </svg>
 );
 
 const WandIcon = () => (
-  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ff6b35" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     <path d="m15 4-1 1 4 4 1-1a2.83 2.83 0 1 0-4-4z" />
     <path d="m13 6-8.5 8.5a2.12 2.12 0 1 0 3 3L16 9" />
     <path d="m2 2 4.5 4.5" />
@@ -29,15 +43,63 @@ const WandIcon = () => (
   </svg>
 );
 
-
-
 const WelcomeScreen: React.FC = () => {
-  const { setScreen } = useWizard();
+  const { setScreen, deployment } = useWizard();
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [settingsOpen]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      setSettingsOpen(false);
+    }
+  };
 
   return (
-    <div className="container">
+    <div className="container welcome-container">
+      <div className="welcome-settings" ref={menuRef} onKeyDown={handleKeyDown}>
+        <button
+          className="welcome-settings-btn"
+          onClick={() => setSettingsOpen(!settingsOpen)}
+          aria-label="Settings"
+          aria-expanded={settingsOpen}
+          aria-haspopup="true"
+        >
+          <GearIcon />
+        </button>
+        {settingsOpen && (
+          <div className="welcome-settings-menu" role="menu">
+            <button
+              className="welcome-settings-item"
+              role="menuitem"
+              onClick={() => {
+                deployment.openDeploymentsFolder();
+                setSettingsOpen(false);
+              }}
+            >
+              <FolderIcon />
+              Open Deployments Folder
+            </button>
+          </div>
+        )}
+      </div>
       <div className="welcome-content">
-        <h1 className="gradient" style={{ fontSize: "3em", marginBottom: "20px" }}>
+        <h1 className="gradient welcome-title">
           Databricks Deployer
         </h1>
         <p className="subtitle">
@@ -46,19 +108,19 @@ const WelcomeScreen: React.FC = () => {
 
         <div className="welcome-intro">
           <p>
-            Setting up Databricks workspaces with proper networking, security, and 
+            Setting up Databricks workspaces with proper networking, security, and
             Unity Catalog can be complex.{" "}
-            <strong style={{ color: "#ff6b35" }}>This tool simplifies deployment</strong>{" "}
+            <strong className="welcome-highlight">This tool simplifies deployment</strong>{" "}
             using proven Terraform templates that follow Databricks best practices.
           </p>
-          <p>
-            No Terraform experience required. Follow the guided steps, configure your 
-            options, and deploy a production-ready workspace. Use the built-in AI Assistant
-            anytime for contextual help and end-to-end technical support during the process.
-          </p>
+          <ul className="welcome-features-list">
+            <li><strong>Guided steps</strong> &mdash; no Terraform experience required</li>
+            <li><strong>Production-ready</strong> &mdash; security and networking built in</li>
+            <li><strong>AI Assistant</strong> &mdash; contextual help throughout the process</li>
+          </ul>
         </div>
 
-        <div style={{ marginTop: "50px", display: "flex", gap: "12px", alignItems: "center" }}>
+        <div className="welcome-cta">
           <button className="btn btn-large" onClick={() => setScreen("cloud-selection")}>
             Get Started →
           </button>
@@ -81,8 +143,11 @@ const WelcomeScreen: React.FC = () => {
             <div className="feature-description">Simple, guided experience</div>
           </div>
         </div>
-      </div>
 
+        {appVersion && (
+          <span className="welcome-version">v{appVersion}</span>
+        )}
+      </div>
     </div>
   );
 };

@@ -33,6 +33,7 @@ module "hub" {
   client_config            = data.azurerm_client_config.current
   databricks_app_reg       = data.azuread_service_principal.this
   is_unity_catalog_enabled = true
+  existing_metastore_id    = var.databricks_metastore_id
   tags                     = var.tags
   resource_group_name      = azurerm_resource_group.hub[0].name
 }

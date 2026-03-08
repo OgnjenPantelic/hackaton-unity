@@ -1,6 +1,6 @@
 //! Azure authentication and permission checking commands.
 
-use super::{http_client, is_valid_uuid};
+use super::{http_client, is_valid_uuid, CLI_LOGIN_PROCESS};
 use super::{CloudCredentials, CloudPermissionCheck};
 use crate::dependencies;
 use serde::{Deserialize, Serialize};
@@ -105,25 +105,65 @@ pub fn get_azure_subscriptions() -> Result<Vec<AzureSubscription>, String> {
     Ok(subscriptions)
 }
 
-/// Trigger Azure CLI login.
+/// Trigger Azure CLI login with a 5-minute timeout. Supports cancellation via `cancel_cli_login`.
 #[tauri::command]
 pub async fn azure_login() -> Result<String, String> {
     use std::process::Command;
+    use std::time::{Duration, Instant};
+    use std::thread;
 
     let az_path = dependencies::find_azure_cli_path()
         .ok_or_else(|| crate::errors::cli_not_found("Azure CLI"))?;
 
-    let output = Command::new(&az_path)
+    let mut child = Command::new(&az_path)
         .args(["login"])
-        .output()
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| format!("Failed to run Azure CLI: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Azure login failed: {}", stderr.trim()));
+    if let Ok(mut proc) = CLI_LOGIN_PROCESS.lock() {
+        *proc = Some(child.id());
     }
 
-    Ok("Azure login initiated. Complete authentication in your browser.".to_string())
+    let timeout = Duration::from_secs(300);
+    let start = Instant::now();
+
+    let result = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let output = child.wait_with_output().map_err(|e| format!("Failed to read output: {}", e))?;
+                if !status.success() {
+                    // Check if this was a user-initiated cancel (PID already cleared by cancel_cli_login)
+                    let was_cancelled = super::lock_or_recover(&CLI_LOGIN_PROCESS).is_none();
+                    if was_cancelled {
+                        break Err("LOGIN_CANCELLED".to_string());
+                    }
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let stderr_str = stderr.trim();
+                    if stderr_str.is_empty() || stderr_str.contains("Killed") || stderr_str.contains("terminated") {
+                        break Err("LOGIN_CANCELLED".to_string());
+                    }
+                    break Err(format!("Azure login failed: {}", stderr_str));
+                }
+                break Ok("Azure login completed successfully.".to_string());
+            }
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    break Err("Azure login timed out after 5 minutes. Please try again.".to_string());
+                }
+                thread::sleep(Duration::from_millis(500));
+            }
+            Err(e) => break Err(format!("Error waiting for Azure CLI: {}", e)),
+        }
+    };
+
+    if let Ok(mut proc) = CLI_LOGIN_PROCESS.lock() {
+        *proc = None;
+    }
+
+    result
 }
 
 /// Set the active Azure subscription.
@@ -474,6 +514,152 @@ pub async fn get_azure_vnets_sp(
         .collect();
 
     Ok(vnets)
+}
+
+/// Result of checking whether resource group names already exist.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ResourceNameConflict {
+    pub name: String,
+    pub resource_type: String,
+    /// True when the existing resource carries the deployer tag, meaning it was
+    /// created by a previous run of this tool and is safe to re-use.
+    pub has_deployer_tag: bool,
+}
+
+const DEPLOYER_TAG_KEY: &str = "databricks_deployer_template";
+
+fn rg_has_deployer_tag(json: &serde_json::Value) -> bool {
+    json["tags"][DEPLOYER_TAG_KEY].is_string()
+}
+
+/// Check if Azure resource group names already exist using `az group show`.
+#[tauri::command]
+pub fn check_resource_names_available(
+    names: Vec<String>,
+) -> Result<Vec<ResourceNameConflict>, String> {
+    use std::process::Command;
+
+    let az_path = dependencies::find_azure_cli_path()
+        .ok_or_else(|| crate::errors::cli_not_found("Azure CLI"))?;
+
+    let mut conflicts = Vec::new();
+
+    for name in &names {
+        let output = Command::new(&az_path)
+            .args(["group", "show", "-n", name, "--output", "json"])
+            .output()
+            .map_err(|e| format!("Failed to run Azure CLI: {}", e))?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_default();
+            conflicts.push(ResourceNameConflict {
+                name: name.clone(),
+                resource_type: "resource group".to_string(),
+                has_deployer_tag: rg_has_deployer_tag(&json),
+            });
+        }
+    }
+
+    Ok(conflicts)
+}
+
+/// Check if Azure resource group names already exist using SP credentials via ARM REST API.
+#[tauri::command]
+pub async fn check_resource_names_available_sp(
+    credentials: CloudCredentials,
+    names: Vec<String>,
+) -> Result<Vec<ResourceNameConflict>, String> {
+    let tenant_id = credentials
+        .azure_tenant_id
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .ok_or("Azure Tenant ID is required")?;
+
+    let client_id = credentials
+        .azure_client_id
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .ok_or("Azure Client ID is required")?;
+
+    let client_secret = credentials
+        .azure_client_secret
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .ok_or("Azure Client Secret is required")?;
+
+    let subscription_id = credentials
+        .azure_subscription_id
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .ok_or("Azure Subscription ID is required")?;
+
+    let http_client = http_client()?;
+
+    let token_url = format!(
+        "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
+        tenant_id
+    );
+
+    let token_response = http_client
+        .post(&token_url)
+        .form(&[
+            ("grant_type", "client_credentials"),
+            ("client_id", client_id.as_str()),
+            ("client_secret", client_secret.as_str()),
+            ("scope", "https://management.azure.com/.default"),
+        ])
+        .send()
+        .await
+        .map_err(|e| format!("Failed to get Azure AD token: {}", e))?;
+
+    if !token_response.status().is_success() {
+        let status = token_response.status();
+        let error_text = token_response.text().await.unwrap_or_default();
+        return Err(format!(
+            "Azure AD authentication failed ({}): {}",
+            status, error_text
+        ));
+    }
+
+    let token_json: serde_json::Value = token_response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Azure AD token response: {}", e))?;
+
+    let access_token = token_json["access_token"]
+        .as_str()
+        .ok_or("No access token in Azure AD response")?;
+
+    let mut conflicts = Vec::new();
+
+    for name in &names {
+        let rg_url = format!(
+            "https://management.azure.com/subscriptions/{}/resourcegroups/{}?api-version=2021-04-01",
+            subscription_id, name
+        );
+
+        let rg_response = http_client
+            .get(&rg_url)
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to check resource group '{}': {}", name, e))?;
+
+        if rg_response.status().is_success() {
+            let rg_json: serde_json::Value = rg_response
+                .json()
+                .await
+                .unwrap_or_default();
+            conflicts.push(ResourceNameConflict {
+                name: name.clone(),
+                resource_type: "resource group".to_string(),
+                has_deployer_tag: rg_has_deployer_tag(&rg_json),
+            });
+        }
+    }
+
+    Ok(conflicts)
 }
 
 /// Check Azure RBAC permissions by verifying role assignments.

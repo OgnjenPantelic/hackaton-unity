@@ -18,7 +18,7 @@ Running this module has the following requirements :
 
 This module uses the following variables in configurations:
 
-- `databricks_account_id`: The ID per Databricks GCP account used for accessing account management APIs. After the GCP account is created, this is available after logging into [https://accounts.cloud.databricks.com](https://accounts.cloud.databricks.com).
+- `databricks_account_id`: The ID per Databricks GCP account used for accessing account management APIs. After the GCP account is created, this is available after logging into [https://accounts.gcp.databricks.com](https://accounts.gcp.databricks.com).
 - `databricks_google_service_account`: Service account used for programatically interacting with cloud infrastructure. More documentation [here](https://cloud.google.com/iam/docs/service-accounts)
 - `google_project` - The name of the GCP project where the workspace is deployed.
 - `google_region` - Region in which infrastructure is spun up.

@@ -458,7 +458,7 @@ export function GitIntegrationCard({ deploymentName }: GitIntegrationCardProps) 
             <div style={{ flex: 1 }}>
               <div style={{ color: "#e0e0e0", fontSize: "14px", fontWeight: "500" }}>Version Control</div>
               <div style={{ color: "#888", fontSize: "13px" }}>
-                Track your infrastructure as code with Git
+                Version control your infrastructure with Git and GitHub
               </div>
             </div>
             <button

@@ -40,20 +40,19 @@ export const VARIABLE_DISPLAY_NAMES: Record<string, string> = {
   existing_metastore_id: "Existing Metastore ID",
 
   // --- SRA: Azure ---
-  resource_suffix: "Workspace Name",
+  resource_suffix: "Resource Suffix",
   hub_vnet_cidr: "Hub VNet CIDR",
   hub_resource_suffix: "Hub Resource Suffix",
-  create_hub: "Create Hub Infrastructure",
+  create_hub: "Create Hub & Account Resources",
   create_workspace_vnet: "Create Workspace VNet",
   create_workspace_resource_group: "Create Workspace Resource Group",
   cmk_enabled: "Customer-Managed Keys (CMK)",
   workspace_vnet: "Workspace VNet Configuration",
   existing_hub_vnet: "Existing Hub VNet",
   existing_workspace_vnet: "Existing Workspace VNet",
-  allowed_fqdns: "Allowed FQDNs",
-  hub_allowed_urls: "Hub Allowed URLs",
-  existing_resource_group_name: "Existing Resource Group",
-  existing_ncc_id: "Existing NCC ID",
+  allowed_fqdns: "Allowed Internet Domains",
+  existing_resource_group_name: "Resource Group",
+  existing_ncc_id: "Existing Network Connectivity Config (NCC) ID",
   existing_ncc_name: "Existing NCC Name",
   existing_network_policy_id: "Existing Network Policy ID",
   existing_cmk_ids: "Existing CMK IDs",
@@ -95,6 +94,7 @@ export const VARIABLE_DISPLAY_NAMES: Record<string, string> = {
   existing_vpc_name: "Existing VPC Name",
   existing_subnet_name: "Existing Subnet Name",
   harden_network: "Network Hardening (Firewall Rules)",
+  control_plane_ips: "Control Plane IP Ranges",
   use_psc: "Private Service Connect (PSC)",
   google_pe_subnet: "PSC Subnet Name",
   google_pe_subnet_ip_cidr_range: "PSC Subnet CIDR",
@@ -161,17 +161,22 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   uc_catalog_name: "Custom name for the workspace catalog and S3 bucket. Leave empty to auto-generate from resource prefix.",
 
   // --- SRA: Azure ---
-  resource_suffix: "Name for your workspace. Also used as suffix for all resource names.",
+  resource_suffix: "Short identifier used as a suffix for all Azure resource names (resource group, VNet, workspace, storage accounts). Lowercase letters and numbers only.",
   hub_vnet_cidr: "CIDR block for the hub Virtual Network. Required when creating hub infrastructure.",
   hub_resource_suffix: "Naming suffix for hub resources. Required when creating hub infrastructure.",
-  create_hub: "Create hub infrastructure (firewall, VNet, CMK). Disable to bring your own hub.",
+  create_hub: "Create hub infrastructure (firewall, VNet, CMK) and Databricks account resources (NCC, network policy, metastore). Disable if these already exist — you'll need to provide their IDs.",
   create_workspace_vnet: "Create a new SRA-managed workspace VNet. Disable to use an existing VNet.",
   create_workspace_resource_group: "Create a new resource group for the workspace. Disable to use an existing one.",
+  existing_resource_group_name: "Azure resource group to deploy the workspace into. Select an existing one or enter a new name.",
   cmk_enabled: "Encrypt managed disks and services with customer-managed keys. Enabled by default.",
-  allowed_fqdns: "Domains that spoke workspaces can access through the firewall. By default, no internet access is allowed.",
-  hub_allowed_urls: "Domains that serverless compute in the hub workspace can access. By default, no internet access is allowed.",
-  existing_ncc_name: "Display name for the Network Connectivity Config. Leave empty to use the default name.",
-  databricks_metastore_id: "Existing metastore ID. Required when not creating hub infrastructure.",
+  existing_hub_vnet: "Required when using an existing hub. Provide the Azure resource IDs for the hub VNet and route table.",
+  existing_workspace_vnet: "Required when using an existing workspace VNet. Provide the Azure resource IDs for the VNet, subnets, NSG associations, and private DNS zones.",
+  existing_cmk_ids: "Required because Customer-Managed Keys (CMK) is enabled. To skip providing these, disable the CMK toggle in the Encryption section.",
+  allowed_fqdns: "Domains workspaces can reach from classic compute (via firewall) and serverless compute (via network policy). No internet access is allowed by default.",
+  existing_ncc_id: "Required when using existing hub. ID of an existing Network Connectivity Config (NCC). The NCC controls serverless private endpoints. Find it in Account Console → Settings → Network connectivity configurations.",
+  existing_ncc_name: "Display name of the NCC. Required for private endpoint setup. Find it alongside the NCC ID in Account Console → Settings → Network connectivity configurations.",
+  existing_network_policy_id: "Required when using existing hub. ID of an existing network policy that controls serverless egress rules. Find it in Account Console → Settings → Network policies.",
+  databricks_metastore_id: "ID of an existing Unity Catalog metastore. Must be created before deploying a workspace. Find it in Account Console → Data → Metastores.",
   sat_configuration: "Security Analysis Tool configuration (enable, schema, catalog, serverless).",
 
   // --- SRA: AWS ---
@@ -199,6 +204,7 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   existing_vpc_name: "Name of the existing VPC in your GCP project.",
   existing_subnet_name: "Name of the existing subnet within the VPC.",
   harden_network: "Enable firewall rules that restrict egress traffic to only Databricks control plane and GCP APIs.",
+  control_plane_ips: "Regional Databricks control-plane IP/CIDR ranges. Required when network hardening is enabled without PSC. See https://docs.databricks.com/gcp/en/resources/ip-domain-region",
   use_psc: "Use Private Service Connect for secure, private connectivity to Databricks. Recommended for production.",
   google_pe_subnet: "Subnet providing IP addresses to Private Service Connect endpoints.",
   google_pe_subnet_ip_cidr_range: "CIDR range for the PSC endpoint subnet.",
@@ -254,9 +260,11 @@ export const EXCLUDE_VARIABLES = [
   "uc_force_destroy",
   "databricks_metastore_id",
   // SRA: Azure - auto-injected or internal
+  "create_workspace_resource_group",
   "subscription_id",
   "sat_force_destroy",
   "catalog_force_destroy",
+  "hub_allowed_urls",
   // SRA: AWS - region-specific config maps with sensible defaults
   "artifact_storage_bucket",
   "shared_datasets_bucket",
@@ -295,7 +303,7 @@ export const OBJECT_FIELD_DECOMPOSITION: Record<string, ObjectSubField[]> = {
   // Azure SRA: workspace VNet config (shown when create_workspace_vnet=true)
   workspace_vnet: [
     { key: "workspace_vnet__cidr", path: ["cidr"], label: "Workspace VNet CIDR", description: "CIDR block for the workspace VNet.", fieldType: "string", required: true, placeholder: "10.0.0.0/20" },
-    { key: "workspace_vnet__new_bits", path: ["new_bits"], label: "Subnet Sizing", description: "Controls how VNet is divided into subnets. Default is 2.", fieldType: "select", placeholder: "2" },
+    { key: "workspace_vnet__new_bits", path: ["new_bits"], label: "Subnet Layout", description: "How to divide the VNet. More subnets means smaller subnets with fewer nodes each.", fieldType: "select", placeholder: "2" },
   ],
   // Azure SRA: existing hub VNet (shown when create_hub=false)
   existing_hub_vnet: [
@@ -304,21 +312,21 @@ export const OBJECT_FIELD_DECOMPOSITION: Record<string, ObjectSubField[]> = {
   ],
   // Azure SRA: existing CMK IDs (shown when create_hub=false)
   existing_cmk_ids: [
-    { key: "existing_cmk_ids__key_vault_id", path: ["key_vault_id"], label: "Key Vault ID", description: "Azure resource ID of the Key Vault containing CMK keys.", fieldType: "string", required: true },
-    { key: "existing_cmk_ids__managed_disk_key_id", path: ["managed_disk_key_id"], label: "Managed Disk Key ID", description: "Azure resource ID of the managed disk encryption key.", fieldType: "string", required: true },
-    { key: "existing_cmk_ids__managed_services_key_id", path: ["managed_services_key_id"], label: "Managed Services Key ID", description: "Azure resource ID of the managed services encryption key.", fieldType: "string", required: true },
+    { key: "existing_cmk_ids__key_vault_id", path: ["key_vault_id"], label: "Key Vault ID", description: "Azure resource ID of the Key Vault containing CMK keys. Find in Azure Portal → Key Vaults → Properties.", fieldType: "string", required: true },
+    { key: "existing_cmk_ids__managed_disk_key_id", path: ["managed_disk_key_id"], label: "Managed Disk Key ID", description: "Azure resource ID of the managed disk encryption key. Find in Azure Portal → Key Vaults → Keys.", fieldType: "string", required: true },
+    { key: "existing_cmk_ids__managed_services_key_id", path: ["managed_services_key_id"], label: "Managed Services Key ID", description: "Azure resource ID of the managed services encryption key. Find in Azure Portal → Key Vaults → Keys.", fieldType: "string", required: true },
   ],
   // Azure SRA: existing workspace VNet (shown when create_workspace_vnet=false)
   existing_workspace_vnet: [
-    { key: "existing_workspace_vnet__nc__vnet_id", path: ["network_configuration", "virtual_network_id"], label: "Virtual Network ID", description: "Azure resource ID of the existing workspace VNet.", fieldType: "string", required: true },
-    { key: "existing_workspace_vnet__nc__private_subnet", path: ["network_configuration", "private_subnet_id"], label: "Private Subnet ID", description: "Azure resource ID of the private subnet.", fieldType: "string", required: true },
-    { key: "existing_workspace_vnet__nc__public_subnet", path: ["network_configuration", "public_subnet_id"], label: "Public Subnet ID", description: "Azure resource ID of the public subnet.", fieldType: "string", required: true },
-    { key: "existing_workspace_vnet__nc__pe_subnet", path: ["network_configuration", "private_endpoint_subnet_id"], label: "Private Endpoint Subnet ID", description: "Azure resource ID of the private endpoint subnet.", fieldType: "string", required: true },
-    { key: "existing_workspace_vnet__nc__priv_nsg", path: ["network_configuration", "private_subnet_network_security_group_association_id"], label: "Private Subnet NSG Association", description: "NSG association ID for the private subnet.", fieldType: "string", required: true },
-    { key: "existing_workspace_vnet__nc__pub_nsg", path: ["network_configuration", "public_subnet_network_security_group_association_id"], label: "Public Subnet NSG Association", description: "NSG association ID for the public subnet.", fieldType: "string", required: true },
-    { key: "existing_workspace_vnet__dns__backend", path: ["dns_zone_ids", "backend"], label: "DNS Zone - Backend", description: "DNS zone ID for backend connectivity.", fieldType: "string", required: true },
-    { key: "existing_workspace_vnet__dns__dfs", path: ["dns_zone_ids", "dfs"], label: "DNS Zone - DFS", description: "DNS zone ID for Data Lake Storage.", fieldType: "string", required: true },
-    { key: "existing_workspace_vnet__dns__blob", path: ["dns_zone_ids", "blob"], label: "DNS Zone - Blob", description: "DNS zone ID for Blob Storage.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__nc__vnet_id", path: ["network_configuration", "virtual_network_id"], label: "Virtual Network ID", description: "Azure resource ID of the existing workspace VNet. Find in Azure Portal → Virtual Networks → Properties → Resource ID.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__nc__private_subnet", path: ["network_configuration", "private_subnet_id"], label: "Private Subnet ID", description: "Azure resource ID of the private subnet for Databricks compute. Find in Azure Portal → Virtual Networks → Subnets.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__nc__public_subnet", path: ["network_configuration", "public_subnet_id"], label: "Public Subnet ID", description: "Azure resource ID of the public subnet for Databricks compute. Find in Azure Portal → Virtual Networks → Subnets.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__nc__pe_subnet", path: ["network_configuration", "private_endpoint_subnet_id"], label: "Private Endpoint Subnet ID", description: "Azure resource ID of the private endpoint subnet. Find in Azure Portal → Virtual Networks → Subnets.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__nc__priv_nsg", path: ["network_configuration", "private_subnet_network_security_group_association_id"], label: "Private Subnet NSG Association", description: "NSG association ID for the private subnet. Find in Azure Portal → Network Security Groups → Properties.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__nc__pub_nsg", path: ["network_configuration", "public_subnet_network_security_group_association_id"], label: "Public Subnet NSG Association", description: "NSG association ID for the public subnet. Find in Azure Portal → Network Security Groups → Properties.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__dns__backend", path: ["dns_zone_ids", "backend"], label: "DNS Zone - Backend", description: "Private DNS zone ID for backend connectivity (privatelink.azuredatabricks.net). Find in Azure Portal → Private DNS Zones.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__dns__dfs", path: ["dns_zone_ids", "dfs"], label: "DNS Zone - DFS", description: "Private DNS zone ID for Data Lake Storage (privatelink.dfs.core.windows.net). Find in Azure Portal → Private DNS Zones.", fieldType: "string", required: true },
+    { key: "existing_workspace_vnet__dns__blob", path: ["dns_zone_ids", "blob"], label: "DNS Zone - Blob", description: "Private DNS zone ID for Blob Storage (privatelink.blob.core.windows.net). Find in Azure Portal → Private DNS Zones.", fieldType: "string", required: true },
   ],
   // Azure SRA: workspace security compliance (optional)
   workspace_security_compliance: [
@@ -385,10 +393,6 @@ export const FQDN_GROUPS: Record<string, { id: string; label: string; descriptio
     { id: "python", label: "Python Packages", description: "PyPI and Python package registries.", urls: ["python.org", "*.python.org", "pypi.org", "*.pypi.org", "pythonhosted.org", "*.pythonhosted.org"] },
     { id: "r", label: "R Packages", description: "CRAN and R package registries.", urls: ["cran.r-project.org", "*.cran.r-project.org", "r-project.org"] },
   ],
-  hub_allowed_urls: [
-    { id: "azure_mgmt", label: "Azure Management", description: "Required for SAT on serverless.", urls: ["management.azure.com", "login.microsoftonline.com"] },
-    { id: "python", label: "Python Packages", description: "PyPI and Python package registries (serverless).", urls: ["python.org", "pypi.org", "pythonhosted.org"] },
-  ],
 };
 
 export const COMPLIANCE_STANDARDS: Record<string, { value: string; label: string }[]> = {
@@ -437,7 +441,7 @@ export const CONDITIONAL_FIELD_VISIBILITY: {
   {
     toggle: "create_hub",
     defaultChecked: true,
-    showWhenChecked: ["hub_vnet_cidr", "hub_resource_suffix", "allowed_fqdns", "hub_allowed_urls"],
+    showWhenChecked: ["hub_vnet_cidr", "hub_resource_suffix", "allowed_fqdns", "sat_configuration", "sat_service_principal"],
     showWhenUnchecked: ["existing_hub_vnet", "existing_cmk_ids", "existing_ncc_id", "existing_ncc_name", "existing_network_policy_id"],
   },
   // Azure SRA: workspace VNet creation vs bring-your-own
@@ -446,13 +450,6 @@ export const CONDITIONAL_FIELD_VISIBILITY: {
     defaultChecked: true,
     showWhenChecked: ["workspace_vnet"],
     showWhenUnchecked: ["existing_workspace_vnet"],
-  },
-  // Azure SRA: workspace resource group creation
-  {
-    toggle: "create_workspace_resource_group",
-    defaultChecked: true,
-    showWhenChecked: [],
-    showWhenUnchecked: ["existing_resource_group_name"],
   },
   // AWS SRA: compliance security profile controls compliance_standards
   {
@@ -468,6 +465,13 @@ export const CONDITIONAL_FIELD_VISIBILITY: {
     showWhenChecked: ["existing_vpc_name", "existing_subnet_name"],
     showWhenUnchecked: ["nodes_ip_cidr_range"],
   },
+  // GCP SRA: network hardening shows control plane IPs (only needed without PSC)
+  {
+    toggle: "harden_network",
+    defaultChecked: true,
+    showWhenChecked: ["control_plane_ips"],
+    showWhenUnchecked: [],
+  },
   // GCP SRA: enable Private Service Connect
   {
     toggle: "use_psc",
@@ -480,7 +484,7 @@ export const CONDITIONAL_FIELD_VISIBILITY: {
       "use_existing_PSC_EP", "use_existing_databricks_vpc_eps",
       "existing_databricks_vpc_ep_workspace", "existing_databricks_vpc_ep_relay",
     ],
-    showWhenUnchecked: [],
+    showWhenUnchecked: ["control_plane_ips"],
   },
   // GCP SRA: use existing CMEK vs create new
   {
@@ -495,6 +499,22 @@ export const CONDITIONAL_FIELD_VISIBILITY: {
     defaultChecked: false,
     showWhenChecked: ["existing_pas_id"],
     showWhenUnchecked: [],
+  },
+];
+
+/**
+ * Visual field groups: render multiple standalone fields inside a styled subsection box,
+ * similar to how OBJECT_FIELD_DECOMPOSITION groups sub-fields under a header.
+ */
+export const FIELD_GROUPS: {
+  label: string;
+  description: string;
+  fields: string[];
+}[] = [
+  {
+    label: "Existing Databricks Account Resources",
+    description: "These Databricks account-level resources must exist before deploying a workspace. Create them in the Account Console or provide IDs from a previous hub deployment.",
+    fields: ["existing_ncc_id", "existing_ncc_name", "existing_network_policy_id"],
   },
 ];
 

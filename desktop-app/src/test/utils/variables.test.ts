@@ -259,4 +259,113 @@ describe("initializeFormDefaults", () => {
 
     expect(defaults.some_var).toBe("");
   });
+
+  it("sets AWS subnet defaults from cidr_block variable default", () => {
+    const vars = [
+      makeVar("cidr_block", { default: "10.4.0.0/16" }),
+      makeVar("private_subnet_1_cidr"),
+      makeVar("private_subnet_2_cidr"),
+      makeVar("public_subnet_cidr"),
+    ];
+    const defaults = initializeFormDefaults(vars);
+
+    expect(defaults.private_subnet_1_cidr).toBe("10.4.0.0/18");
+    expect(defaults.private_subnet_2_cidr).toBe("10.4.64.0/18");
+    expect(defaults.public_subnet_cidr).toBe("10.4.128.0/28");
+  });
+
+  it("uses fallback cidr_block when no default present", () => {
+    const vars = [
+      makeVar("cidr_block"),
+      makeVar("private_subnet_1_cidr"),
+    ];
+    const defaults = initializeFormDefaults(vars);
+
+    // Falls back to "10.4.0.0/16"
+    expect(defaults.private_subnet_1_cidr).toBe("10.4.0.0/18");
+  });
+
+  it("sets resource_suffix with randomSuffix", () => {
+    const vars = [makeVar("resource_suffix")];
+    const defaults = initializeFormDefaults(vars);
+
+    expect(defaults.resource_suffix).toMatch(/^sra[a-z0-9]{6}$/);
+  });
+
+  it("sets resource_prefix with randomSuffix", () => {
+    const vars = [makeVar("resource_prefix")];
+    const defaults = initializeFormDefaults(vars);
+
+    expect(defaults.resource_prefix).toMatch(/^dbx[a-z0-9]{6}$/);
+  });
+
+  it("sets hub_resource_suffix with shortSuffix", () => {
+    const vars = [makeVar("hub_resource_suffix")];
+    const defaults = initializeFormDefaults(vars);
+
+    expect(defaults.hub_resource_suffix).toMatch(/^hub[a-z0-9]+$/);
+    expect(defaults.hub_resource_suffix).not.toContain("-");
+  });
+
+  it("sets workspace_sku to premium", () => {
+    const vars = [makeVar("workspace_sku")];
+    const defaults = initializeFormDefaults(vars);
+
+    expect(defaults.workspace_sku).toBe("premium");
+  });
+
+  it("sets boolean flags to false when they have null defaults", () => {
+    const vars = [
+      makeVar("use_existing_cmek", { default: null }),
+      makeVar("metastore_exists", { default: null }),
+    ];
+    const defaults = initializeFormDefaults(vars);
+
+    expect(defaults.use_existing_cmek).toBe(false);
+    expect(defaults.metastore_exists).toBe(false);
+  });
+
+  it("does not override boolean flags that have explicit non-null defaults", () => {
+    const vars = [makeVar("use_existing_cmek", { default: "true" })];
+    const defaults = initializeFormDefaults(vars);
+
+    expect(defaults.use_existing_cmek).toBe("true");
+  });
+
+  it("skips complex HCL default values (non-JSON maps/lists)", () => {
+    const vars = [makeVar("tags", { default: "{ Environment = \"dev\" }" })];
+    const defaults = initializeFormDefaults(vars);
+
+    // Complex HCL is skipped entirely, falling through to the empty-string branch
+    expect(defaults.tags).toBeUndefined();
+  });
+
+  it("skips terraform null defaults", () => {
+    const vars = [makeVar("optional_field", { default: "null" })];
+    const defaults = initializeFormDefaults(vars);
+
+    // "null" defaults are skipped, falling through to the empty-string branch
+    expect(defaults.optional_field).toBeUndefined();
+  });
+
+  it("sets AWS SRA defaults", () => {
+    const vars = [
+      makeVar("vpc_cidr_range"),
+      makeVar("hub_vnet_cidr"),
+    ];
+    const defaults = initializeFormDefaults(vars);
+
+    expect(defaults.vpc_cidr_range).toBe("10.0.0.0/16");
+    expect(defaults.hub_vnet_cidr).toBe("10.100.0.0/20");
+  });
+
+  it("prefers azureUser over gcpAccount for admin_user", () => {
+    const vars = [makeVar("admin_user")];
+    const defaults = initializeFormDefaults(vars, {
+      azureUser: "azure@test.com",
+      gcpAccount: "gcp@test.com",
+    });
+
+    expect(defaults.admin_user).toBe("azure@test.com");
+  });
 });

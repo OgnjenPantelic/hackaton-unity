@@ -14,6 +14,7 @@ export function UnityCatalogConfigScreen() {
     startDeploymentWizard: onStartDeployment,
     goBack: onBack,
   } = ctx;
+
   const region = formValues.region || formValues.location || formValues.google_region || "";
   const workspaceName = formValues.workspace_name || formValues.databricks_workspace_name || formValues.prefix || "workspace";
   const isAzureSra = selectedTemplate?.id === "azure-sra";
@@ -40,21 +41,19 @@ export function UnityCatalogConfigScreen() {
   }, [isSraAlwaysCatalog, formValues.resource_suffix, formValues.resource_prefix, setUcConfig, generateStorageName]);
   
   const metastoreExists = ucPermissionCheck?.metastore.exists;
-  
-  const needsAcknowledgment = ucConfig.enabled && metastoreExists && !sraCreateHub;
-  const canProceed = isSraAlwaysCatalog ? (
-    ucConfig.catalog_name.trim() !== "" && 
+
+  const needsAcknowledgment = ucConfig.enabled;
+  const canProceed = !ucConfig.enabled || (
+    ucConfig.catalog_name.trim() !== "" &&
     ucConfig.storage_name.trim() !== "" &&
-    (sraCreateHub || !metastoreExists || ucPermissionAcknowledged)
-  ) : !ucConfig.enabled || (
-    ucConfig.catalog_name.trim() !== "" && 
-    ucConfig.storage_name.trim() !== "" &&
-    (!needsAcknowledgment || ucPermissionAcknowledged)
+    ucPermissionAcknowledged
   );
   const metastoreName = ucPermissionCheck?.metastore.metastore_name;
   const metastoreId = ucPermissionCheck?.metastore.metastore_id;
   const [catalogFormatted, setCatalogFormatted] = useState(false);
   const [storageFormatted, setStorageFormatted] = useState(false);
+
+  const handleStartDeployment = onStartDeployment;
 
   return (
     <div className="container">
@@ -166,13 +165,13 @@ export function UnityCatalogConfigScreen() {
         
         {ucConfig.enabled && (
           <>
-            {/* Permission warning - only show when metastore exists */}
-            {metastoreExists && (
+            {/* Permission warning - show when Unity Catalog is enabled */}
+            {needsAcknowledgment && (
               <div className="alert alert-warning" style={{ marginBottom: "16px" }}>
                 <strong>Permissions Required</strong>
                 <br />
                 <span style={{ fontSize: "0.9em" }}>
-                  {ucPermissionCheck?.message}
+                  {ucPermissionCheck?.message || "Please confirm you have the required permissions to create a catalog in this workspace."}
                 </span>
                 <div style={{ 
                   marginTop: "8px", 
@@ -302,7 +301,7 @@ export function UnityCatalogConfigScreen() {
       <div style={{ marginTop: "32px", display: "flex", alignItems: "center", gap: "16px" }}>
         <button 
           className="btn btn-large btn-success" 
-          onClick={onStartDeployment}
+          onClick={handleStartDeployment}
           disabled={!canProceed || loading || ucCheckLoading}
         >
           {loading ? (
@@ -325,7 +324,7 @@ export function UnityCatalogConfigScreen() {
           </span>
         )}
       </div>
-      {ucConfig.enabled && !ucPermissionCheck?.can_create_catalog && ucPermissionCheck?.metastore.exists && (
+      {ucConfig.enabled && !ucPermissionCheck?.can_create_catalog && ucPermissionCheck?.metastore.exists && !ucPermissionAcknowledged && (
         <p style={{ marginTop: "12px", color: "#e67e22", fontSize: "0.9em" }}>
           You may not have sufficient permissions. The workspace will be created, but catalog creation may fail.
         </p>
@@ -335,6 +334,7 @@ export function UnityCatalogConfigScreen() {
           Catalog setup is optional. You can create catalogs later through the Databricks workspace.
         </p>
       )}
+
     </div>
   );
 }

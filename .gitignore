@@ -11,6 +11,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Backups
+*.bak
+
 # Secrets
 .env
 *.pem

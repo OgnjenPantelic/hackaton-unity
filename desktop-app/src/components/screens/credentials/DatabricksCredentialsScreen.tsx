@@ -307,7 +307,7 @@ export function DatabricksCredentialsScreen() {
       <button className="back-btn" onClick={onBack}>
         ← Back
       </button>
-      <h1>Databricks Credentials</h1>
+      <h1>Databricks Account</h1>
       <p className="subtitle">
         Configure your Databricks credentials for deploying resources. A service principal with account admin privileges is required.
       </p>

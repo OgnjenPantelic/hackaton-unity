@@ -5,15 +5,15 @@ variable "databricks_account_id" {
 } 
 variable "databricks_google_service_account" {
     # Google service account for Databricks
-    # This service account must have the "Databricks Workspace Creatore" role or equivalent
+    # This service account must have the "Databricks Workspace Creator" role or equivalent
     # and the "Databricks Account Admin" role in the Databricks account console
 } 
 
 variable "google_project" {
-    # Name of the Google Cloud project
+    # Google Cloud project ID
 } 
 variable "google_region" {
-    # Google Cloud project ID
+    # Google Cloud region for resource deployment
 } 
 
 ## TODO : default value not a variable
@@ -140,6 +140,17 @@ variable "cmek_resource_id" {
 variable "use_psc" {
     # Flag to use Private Service Connect (PSC) for the workspace
     default = false
+}
+
+variable "control_plane_ips" {
+    description = "Regional Databricks control-plane IP/CIDR ranges (required when harden_network=true and use_psc=false). See https://docs.databricks.com/gcp/en/resources/ip-domain-region"
+    type    = list(string)
+    default = []
+
+    validation {
+        condition     = length(var.control_plane_ips) > 0 || !var.harden_network || var.use_psc
+        error_message = "control_plane_ips must contain at least one CIDR when harden_network is true and use_psc is false. See https://docs.databricks.com/gcp/en/resources/ip-domain-region for regional IPs."
+    }
 }
 
 variable "use_existing_databricks_vpc_eps" {

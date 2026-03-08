@@ -1,4 +1,6 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useCallback } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Alert } from "../ui";
 import { 
   CLOUDS, 
   AWS_REGIONS, 
@@ -12,6 +14,7 @@ import {
   LIST_FIELD_DECOMPOSITION,
   COMPLIANCE_STANDARDS,
   FQDN_GROUPS,
+  FIELD_GROUPS,
 } from "../../constants";
 import type { ObjectSubField } from "../../constants";
 import { TerraformVariable } from "../../types";
@@ -20,13 +23,18 @@ import { computeSubnets, computeAwsSubnets, computeAwsSraSubnets, cidrsOverlap, 
 import { useWizard } from "../../hooks/useWizard";
 import { usePersistedCollapse } from "../../hooks/usePersistedCollapse";
 
+interface ResourceNameConflict {
+  name: string;
+  resource_type: string;
+  has_deployer_tag: boolean;
+}
+
 const KNOWN_BOOLEANS = new Set([
   "create_new_vpc",
   "use_existing_cmek",
   "use_existing_pas",
   "metastore_exists",
   "audit_log_delivery_exists",
-  "create_workspace_resource_group",
   "create_hub",
   "create_workspace_vnet",
   "cmk_enabled",
@@ -57,6 +65,7 @@ export function ConfigurationScreen() {
     formSubmitAttempted, setFormSubmitAttempted,
     setScreen, goBack,
     startDeploymentWizard,
+    credentials,
     azure,
   } = useWizard();
   const azureResourceGroups = azure.resourceGroups;
@@ -72,14 +81,84 @@ export function ConfigurationScreen() {
   const [showEncryption, setShowEncryption] = usePersistedCollapse("encryption", false);
   const createNewVpc = formValues["create_new_vpc"] !== false && formValues["create_new_vpc"] !== "false";
   const isSraTemplate = selectedTemplate?.id?.includes("sra") ?? false;
+  const isAzureSra = selectedTemplate?.id === "azure-sra";
   const skipsCatalogScreen = selectedTemplate?.id === "gcp-sra";
-  const onContinue = () => {
+  const isAzureSimple = selectedCloud === CLOUDS.AZURE && !isAzureSra;
+
+  const [resourceConflicts, setResourceConflicts] = useState<ResourceNameConflict[]>([]);
+  const [showConflictDialog, setShowConflictDialog] = useState(false);
+  const [checkingNames, setCheckingNames] = useState(false);
+
+  const proceedAfterCheck = useCallback(() => {
     if (skipsCatalogScreen) {
       startDeploymentWizard();
     } else {
       setScreen("unity-catalog-config");
     }
-  };
+  }, [skipsCatalogScreen, startDeploymentWizard, setScreen]);
+
+  const waitForPaint = () => new Promise<void>(resolve => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  });
+
+  const onContinue = useCallback(() => {
+    const namesToCheck: string[] = [];
+
+    if (isAzureSra) {
+      if (formValues.create_hub === true || formValues.create_hub === "true") {
+        const hubSuffix = formValues.hub_resource_suffix || formValues.resource_suffix || "";
+        if (hubSuffix) namesToCheck.push(`rg-${hubSuffix}`);
+      }
+      if (formValues.create_workspace_resource_group === true || formValues.create_workspace_resource_group === "true") {
+        const suffix = formValues.resource_suffix || "";
+        if (suffix) namesToCheck.push(`rg-${suffix}`);
+      }
+    } else if (isAzureSimple) {
+      const createNew = formValues.create_new_resource_group;
+      if (createNew === true || createNew === "true") {
+        const rgName = formValues.resource_group_name as string;
+        if (rgName) namesToCheck.push(rgName);
+      }
+    }
+
+    if (namesToCheck.length === 0) {
+      proceedAfterCheck();
+      return;
+    }
+
+    setCheckingNames(true);
+
+    setTimeout(async () => {
+      await waitForPaint();
+      try {
+        const isSp = azure.authMode === "service_principal"
+          && credentials.azure_client_id
+          && credentials.azure_client_secret;
+
+        const conflicts = isSp
+          ? await invoke<ResourceNameConflict[]>("check_resource_names_available_sp", {
+              credentials: { ...credentials, cloud: selectedCloud },
+              names: namesToCheck,
+            })
+          : await invoke<ResourceNameConflict[]>("check_resource_names_available", {
+              names: namesToCheck,
+            });
+
+        const untagged = conflicts.filter(c => !c.has_deployer_tag);
+        if (untagged.length > 0) {
+          setResourceConflicts(untagged);
+          setShowConflictDialog(true);
+        } else {
+          proceedAfterCheck();
+        }
+      } catch (e) {
+        console.warn("Resource name pre-flight check failed, proceeding anyway:", e);
+        proceedAfterCheck();
+      } finally {
+        setCheckingNames(false);
+      }
+    }, 0);
+  }, [isAzureSra, isAzureSimple, formValues, credentials, selectedCloud, azure.authMode, proceedAfterCheck]);
   const onBack = goBack;
   
   const handleFormChange = (name: string, value: string | boolean | number | string[]) => {
@@ -248,7 +327,6 @@ export function ConfigurationScreen() {
 
   // Conditionally required fields based on toggle state and template type
   const isAwsSra = selectedTemplate?.id === "aws-sra";
-  const isAzureSra = selectedTemplate?.id === "azure-sra";
   const isGcpSra = selectedTemplate?.id === "gcp-sra";
 
   const conditionallyRequired = new Set<string>();
@@ -530,9 +608,9 @@ export function ConfigurationScreen() {
     "Advanced: Network Configuration": selectedCloud === CLOUDS.AZURE && !isSraTemplate
       ? "VNet and subnet configuration. Defaults are pre-filled — review if you have specific networking requirements."
       : "Network settings have sensible defaults. Modify only if you have specific requirements.",
-    "Hub Infrastructure": "Hub VNet, firewall, and CMK infrastructure. Disable to bring your own hub resources.",
+    "Hub Infrastructure": "Azure hub VNet, firewall, and CMK infrastructure. Toggle off 'Create Hub & Account Resources' below if you already have hub infrastructure deployed.",
     "Workspace Network": "Workspace VNet and resource group configuration.",
-    "Firewall Rules": "Control which domains workspaces can access through the firewall.",
+    "Firewall Rules": "Control which internet domains workspaces can access (applies to both classic and serverless compute).",
     "Encryption": "Customer-managed key (CMK) encryption for managed disks and services.",
     "Security & Compliance": "Security profiles, encryption, and compliance settings.",
     "Metastore & Catalog": "Configure Unity Catalog metastore and workspace catalog.",
@@ -603,10 +681,10 @@ export function ConfigurationScreen() {
           value={formValues[sf.key] ?? "2"}
           onChange={(e) => handleFormChange(sf.key, Number(e.target.value))}
         >
-          <option value="1">1 — larger subnets, fewer divisions</option>
-          <option value="2">2 — balanced (default, recommended)</option>
-          <option value="3">3 — smaller subnets, more divisions</option>
-          <option value="4">4 — smallest subnets</option>
+          <option value="1">Large — 2 subnets, max compute capacity</option>
+          <option value="2">Balanced — 4 subnets (recommended)</option>
+          <option value="3">Small — 8 subnets, less compute per subnet</option>
+          <option value="4">Smallest — 16 subnets, least compute per subnet</option>
         </select>
       ) : (
         <input
@@ -620,6 +698,20 @@ export function ConfigurationScreen() {
         />
       )}
       <div className="help-text">{sf.description}</div>
+      {sf.key === "workspace_vnet__new_bits" && (() => {
+        const cidrVal = formValues["workspace_vnet__cidr"];
+        if (!cidrVal || typeof cidrVal !== "string") return null;
+        const p = parseCidr(cidrVal);
+        if (!p || p.prefixLen < 16 || p.prefixLen > 24) return null;
+        const nb = Number(formValues[sf.key] ?? 2);
+        const subnetPrefix = p.prefixLen + nb;
+        const nodes = getUsableNodes(subnetPrefix);
+        return (
+          <div className="help-text" style={{ color: "#4ec9b0" }}>
+            {Math.pow(2, nb)} subnets · each /{subnetPrefix}, up to ~{nodes.toLocaleString()} nodes
+          </div>
+        );
+      })()}
       {sf.key === "workspace_vnet__cidr" && (() => {
         const val = formValues[sf.key];
         if (!val || typeof val !== "string") return null;
@@ -785,7 +877,7 @@ export function ConfigurationScreen() {
         ) : variable.name === "resource_group_name" && azureResourceGroups.length > 0 ? (
           <>
             <select
-              value={azureResourceGroups.some(rg => rg.name === formValues[variable.name]) ? formValues[variable.name] : ""}
+              value={!formValues.create_new_resource_group && azureResourceGroups.some(rg => rg.name === formValues[variable.name]) ? formValues[variable.name] : ""}
               onChange={(e) => {
                 const val = e.target.value;
                 setFormValues(prev => ({
@@ -809,20 +901,14 @@ export function ConfigurationScreen() {
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              value={azureResourceGroups.some(rg => rg.name === formValues[variable.name]) ? "" : (formValues[variable.name] || "")}
+              value={formValues.create_new_resource_group ? (formValues[variable.name] || "") : ""}
               onChange={(e) => {
                 const val = e.target.value;
-                const isExisting = azureResourceGroups.some(
-                  rg => rg.name.toLowerCase() === val.toLowerCase()
-                );
-                const actualName = isExisting 
-                  ? azureResourceGroups.find(rg => rg.name.toLowerCase() === val.toLowerCase())?.name || val
-                  : val;
                 setFormValues(prev => ({
                   ...prev,
-                  [variable.name]: actualName,
-                  vnet_resource_group_name: actualName,
-                  create_new_resource_group: !isExisting,
+                  [variable.name]: val,
+                  vnet_resource_group_name: val,
+                  create_new_resource_group: true,
                 }));
               }}
               placeholder="Or enter new resource group name"
@@ -833,17 +919,24 @@ export function ConfigurationScreen() {
         ) : variable.name === "existing_resource_group_name" && azureResourceGroups.length > 0 ? (
           <select
             value={azureResourceGroups.some(rg => rg.name === formValues[variable.name]) ? formValues[variable.name] : ""}
-            onChange={(e) => handleFormChange(variable.name, e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setFormValues(prev => ({
+                ...prev,
+                [variable.name]: val,
+                create_workspace_resource_group: val === "" ? true : false,
+              }));
+            }}
             className={formSubmitAttempted && formValidation.missingFields.includes(variable.name) ? "input-error" : ""}
           >
-            <option value="">Select an existing resource group</option>
+            <option value="">{`Create new (rg-${formValues["resource_suffix"] || "<resource_suffix>"})`}</option>
             {azureResourceGroups.map((rg) => (
               <option key={rg.name} value={rg.name}>
                 {rg.name} ({rg.location})
               </option>
             ))}
           </select>
-        ) : (variable.name === "allowed_fqdns" || variable.name === "hub_allowed_urls") && FQDN_GROUPS[variable.name] ? (() => {
+        ) : variable.name === "allowed_fqdns" && FQDN_GROUPS[variable.name] ? (() => {
           const groups = FQDN_GROUPS[variable.name];
           const currentUrls: string[] = (() => {
             const val = formValues[variable.name];
@@ -900,16 +993,11 @@ export function ConfigurationScreen() {
                 </label>
               ))}
               <div className="help-text" style={{ marginTop: "4px" }}>
-                {variable.name === "allowed_fqdns"
-                  ? "If SAT is enabled, Azure Management and Python Packages are required."
-                  : "If SAT runs on serverless, both groups are required."}
+                If SAT is enabled, Azure Management and Python Packages are required.
               </div>
               {(() => {
                 const satEnabled = formValues["sat__enabled"] === true || formValues["sat__enabled"] === "true";
                 if (!satEnabled) return null;
-                const runOnServerless = formValues["sat__run_on_serverless"] === true || formValues["sat__run_on_serverless"] === "true";
-                const relevantField = runOnServerless ? "hub_allowed_urls" : "allowed_fqdns";
-                if (variable.name !== relevantField) return null;
                 const requiredGroups = groups.filter(g => g.id === "azure_mgmt" || g.id === "python");
                 const missing = requiredGroups.filter(g => !isGroupChecked(g));
                 if (missing.length === 0) return null;
@@ -1098,6 +1186,53 @@ export function ConfigurationScreen() {
     );
   };
 
+  const fieldGroupMap = useMemo(() => {
+    const map: Record<string, typeof FIELD_GROUPS[number]> = {};
+    for (const group of FIELD_GROUPS) {
+      for (const field of group.fields) map[field] = group;
+    }
+    return map;
+  }, []);
+
+  const renderSectionFields = (vars: TerraformVariable[]) => {
+    const rendered: React.ReactNode[] = [];
+    const groupsRendered = new Set<string>();
+
+    for (const v of vars) {
+      const group = fieldGroupMap[v.name];
+      if (group) {
+        if (groupsRendered.has(group.label)) continue;
+        groupsRendered.add(group.label);
+        const groupVars = vars.filter(gv => group.fields.includes(gv.name));
+        if (groupVars.length === 0) continue;
+        rendered.push(
+          <div key={`group-${group.label}`} style={{ gridColumn: "1 / -1" }}>
+            <div style={{
+              padding: "12px 16px",
+              background: "rgba(255,255,255,0.03)",
+              borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.06)",
+              marginBottom: "4px",
+            }}>
+              <h4 style={{ margin: "0 0 4px 0", fontSize: "0.95em", color: "#e0e0e0" }}>
+                {group.label}
+              </h4>
+              <div className="help-text" style={{ marginBottom: "12px" }}>
+                {group.description}
+              </div>
+              <div className="two-column">
+                {groupVars.map(renderField)}
+              </div>
+            </div>
+          </div>
+        );
+      } else {
+        rendered.push(renderField(v));
+      }
+    }
+    return rendered;
+  };
+
   return (
     <div className="container">
       <button className="back-btn" onClick={onBack}>
@@ -1110,7 +1245,11 @@ export function ConfigurationScreen() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <form onSubmit={(e) => e.preventDefault()}>
+      {checkingNames && (
+        <Alert type="loading">Checking resource availability...</Alert>
+      )}
+
+      <form onSubmit={(e) => e.preventDefault()} style={{ opacity: checkingNames ? 0.6 : 1, pointerEvents: checkingNames ? "none" : undefined }}>
         {/* Non-collapsible sections (Workspace) */}
         {Object.entries(sections)
           .filter(([sectionName]) => !COLLAPSIBLE_SECTIONS.has(sectionName))
@@ -1245,7 +1384,7 @@ export function ConfigurationScreen() {
                       </div>
                     )}
                     <div className="two-column">
-                      {visibleVars.map(renderField)}
+                      {renderSectionFields(visibleVars)}
                     </div>
                   </>
                 )}
@@ -1264,12 +1403,12 @@ export function ConfigurationScreen() {
                 onContinue();
               }
             }} 
-            disabled={loading}
+            disabled={loading || checkingNames}
           >
-            {loading ? (
+            {loading || checkingNames ? (
               <>
                 <span className="spinner" />
-                Preparing...
+                {checkingNames ? "Checking resources..." : "Preparing..."}
               </>
             ) : (
               skipsCatalogScreen ? "Create Workspace →" : "Continue →"
@@ -1288,6 +1427,36 @@ export function ConfigurationScreen() {
           )}
         </div>
       </form>
+
+      {showConflictDialog && (
+        <div className="confirm-overlay" onClick={() => setShowConflictDialog(false)}>
+          <div className="confirm-dialog" onClick={e => e.stopPropagation()}>
+            <h3>Resource Name Conflict Detected</h3>
+            <p>
+              The following resource names already exist in your subscription:
+            </p>
+            <ul style={{ margin: "12px 0", paddingLeft: "20px" }}>
+              {resourceConflicts.map(c => (
+                <li key={c.name} style={{ marginBottom: "4px" }}>
+                  <code>{c.name}</code>{" "}
+                  <span style={{ color: "var(--text-muted)" }}>({c.resource_type})</span>
+                </li>
+              ))}
+            </ul>
+            <div className="confirm-dialog-actions">
+              <button className="btn btn-secondary" onClick={() => setShowConflictDialog(false)}>
+                Go Back
+              </button>
+              <button className="btn btn-danger" onClick={() => {
+                setShowConflictDialog(false);
+                proceedAfterCheck();
+              }}>
+                Continue Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -94,13 +94,7 @@ resource "google_compute_firewall" "to_databricks_control_plane" {
   name                    = "to-databricks-control-plane-${google_compute_network.dbx_private_vpc[0].name}"
   direction               = "EGRESS"
   priority                = 1000
-  destination_ranges      = [
-    # ADD REGIONAL IPS as listed here : https://docs.databricks.com/gcp/en/resources/ip-domain-region
-    # var.control_plane_ip_1,  # X.X.X.X/32
-    # var.control_plane_ip_2,  # X.X.X.X/28
-    # var.control_plane_ip_3,  # X.X.X.X/28
-    # var.control_plane_ip_4   # Y.Y.Y.Y/32
-  ]
+  destination_ranges      = var.control_plane_ips
   source_ranges           = []
   allow {
     protocol              = "tcp"
@@ -136,5 +130,5 @@ resource "google_compute_firewall" "to_google_apis" {
 #     protocol              = "tcp"
 #     ports                 = ["3306"]
 #   }
-#   network                 = google_compute_network.dbx_private_vpc[0] .self_link
+#   network                 = google_compute_network.dbx_private_vpc[0].self_link
 # }

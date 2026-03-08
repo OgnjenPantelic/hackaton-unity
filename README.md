@@ -1,6 +1,6 @@
 # Workspace Creator
 
-Desktop app and tools for deploying Databricks workspaces across AWS, Azure, and GCP with Unity Catalog, automated Terraform setup, Azure identity support, and an embedded AI assistant.
+Desktop app and tools for deploying Databricks workspaces across AWS, Azure, and GCP with Unity Catalog, automated Terraform setup, Azure identity support, auto-import/retry on "already exists" errors, resource name conflict detection, and an embedded AI assistant.
 
 The AI assistant provides context-aware help for each step of the deployment wizard. It supports GitHub Models (free), OpenAI, and Claude as providers. See [desktop-app/README.md](desktop-app/README.md#ai-assistant) for setup instructions.
 
@@ -8,7 +8,7 @@ The AI assistant provides context-aware help for each step of the deployment wiz
 
 | Directory | Description |
 |-----------|-------------|
-| `desktop-app/` | Tauri desktop app for guided workspace deployment (React + Rust) |
+| `desktop-app/` | Tauri desktop app for guided workspace deployment (React + Rust) — includes auto-import/retry, resource conflict detection, and real-time resource timeline |
 | `download-site/` | Flask-based download page for distributing the app |
 
 ## System Requirements
@@ -63,3 +63,4 @@ For detailed troubleshooting, see [desktop-app/README.md#troubleshooting](deskto
 - **Terraform not found:** Restart the app after first run
 - **Azure CLI not detected:** Run `az login` before starting the app
 - **AWS SSO expired:** Run `aws sso login --profile <profile>` to refresh
+- **"Resource already exists" errors:** The app auto-imports and retries up to 3 times. If it still fails, check the deployment logs for details.

@@ -33,7 +33,7 @@ resource "databricks_mws_vpc_endpoint" "backend_rest" {
   region              = var.region
 }
 
-# Backend Rest VPC Endpoint Configuration
+# Backend Relay VPC Endpoint Configuration
 resource "databricks_mws_vpc_endpoint" "backend_relay" {
   account_id          = var.databricks_account_id
   aws_vpc_endpoint_id = var.backend_relay

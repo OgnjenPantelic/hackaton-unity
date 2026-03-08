@@ -62,7 +62,7 @@ export function computeAwsSubnets(vpcCidr: string): {
 /**
  * Compute AWS SRA subnets from a VPC CIDR:
  * - 2 private subnets at VPC+2 (each 1/4 of VPC, for Databricks compute)
- * - 2 PrivateLink subnets at /24, placed after the private subnets
+ * - 2 PrivateLink subnets at /28, placed after the private subnets
  */
 export function computeAwsSraSubnets(vpcCidr: string): {
   private1: string;

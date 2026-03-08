@@ -8,7 +8,7 @@ const CheckIcon = () => (
 );
 
 export function TemplateSelectionScreen() {
-  const { templates, selectedCloud, selectTemplate, goBack } = useWizard();
+  const { templates, selectedCloud, loadingTemplate, selectTemplate, goBack } = useWizard();
   const cloudTemplates = templates.filter((t) => t.cloud === selectedCloud);
 
   const handleKeyDown = (e: React.KeyboardEvent, template: typeof cloudTemplates[0]) => {
@@ -20,13 +20,22 @@ export function TemplateSelectionScreen() {
 
   return (
     <div className="container">
-      <button className="back-btn" onClick={goBack}>
+      <button className="back-btn" onClick={goBack} disabled={!!loadingTemplate}>
         ← Back
       </button>
       <h1>Select Template</h1>
       <p className="subtitle">
         Choose the security and networking configuration that best fits your requirements.
       </p>
+
+      {loadingTemplate && (
+        <div className="loading-overlay">
+          <div className="loading-content">
+            <span className="spinner large" />
+            <div>Loading template configuration...</div>
+          </div>
+        </div>
+      )}
 
       <div className="templates">
         {cloudTemplates.length === 0 ? (
@@ -43,13 +52,15 @@ export function TemplateSelectionScreen() {
           <>
             {cloudTemplates.map((template) => {
               const inDev = template.id === "gcp-sra";
+              const isLoading = loadingTemplate === template.id;
+              const disabled = inDev || !!loadingTemplate;
               return (
                 <div
                   key={template.id}
-                  className="template-card"
-                  onClick={inDev ? undefined : () => selectTemplate(template)}
-                  onKeyDown={inDev ? undefined : (e) => handleKeyDown(e, template)}
-                  tabIndex={inDev ? -1 : 0}
+                  className={`template-card${isLoading ? " selected" : ""}${disabled ? " disabled" : ""}`}
+                  onClick={disabled ? undefined : () => selectTemplate(template)}
+                  onKeyDown={disabled ? undefined : (e) => handleKeyDown(e, template)}
+                  tabIndex={disabled ? -1 : 0}
                   role="button"
                   aria-label={`Select ${template.name} template`}
                   style={inDev ? { opacity: 0.5, cursor: "not-allowed", position: "relative" } : undefined}
@@ -63,7 +74,15 @@ export function TemplateSelectionScreen() {
                       IN DEVELOPMENT
                     </div>
                   )}
-                  <div className="template-title">{template.name}</div>
+                  <div className="template-title">
+                    {template.name}
+                    {template.id.endsWith("-simple") && (
+                      <span style={{
+                        fontSize: "12px", fontWeight: 500, color: "var(--success)",
+                        marginLeft: "8px", opacity: 0.85,
+                      }}>(Default)</span>
+                    )}
+                  </div>
                   <div className="template-description">{template.description}</div>
                   <div className="template-features">
                     <ul>

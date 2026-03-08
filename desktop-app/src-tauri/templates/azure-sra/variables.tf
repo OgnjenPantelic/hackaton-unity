@@ -294,7 +294,7 @@ variable "sat_service_principal" {
   sensitive   = true
 }
 
-# This variable is only used for development purposes - is should not be used/set if deploying SRA in a customer environment
+# This variable is only used for development purposes - it should not be used/set if deploying SRA in a customer environment
 variable "sat_force_destroy" {
   type        = bool
   default     = false
@@ -317,4 +317,16 @@ variable "uc_storage_name" {
   type        = string
   description = "(Optional) Custom storage account name for the catalog. Defaults to auto-generated."
   default     = null
+}
+
+variable "hub_workspace_url_override" {
+  type        = string
+  default     = ""
+  description = "Internal: placeholder URL used during auto-import so the hub provider can initialise before the workspace exists in state."
+}
+
+variable "spoke_workspace_url_override" {
+  type        = string
+  default     = ""
+  description = "Internal: placeholder URL used during auto-import so the spoke provider can initialise before the workspace exists in state."
 }

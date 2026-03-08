@@ -188,3 +188,9 @@ variable "databricks_profile" {
   type        = string
   default     = ""
 }
+
+variable "workspace_url_override" {
+  description = "Override for the workspace Databricks provider host. Used internally during terraform import when the workspace does not exist yet."
+  type        = string
+  default     = ""
+}

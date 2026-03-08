@@ -629,3 +629,170 @@ pub fn get_terraform_install_path() -> std::path::PathBuf {
         std::path::PathBuf::from(".")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── create_profile ──────────────────────────────────────────────────
+
+    #[test]
+    fn create_profile_aws_with_host() {
+        let mut data = HashMap::new();
+        data.insert("host".to_string(), "https://accounts.cloud.databricks.com".to_string());
+        data.insert("account_id".to_string(), "acc-123".to_string());
+        data.insert("client_id".to_string(), "cid".to_string());
+        data.insert("client_secret".to_string(), "csec".to_string());
+
+        let profile = create_profile("test-profile", &data);
+        assert!(profile.is_some());
+        let p = profile.unwrap();
+        assert_eq!(p.name, "test-profile");
+        assert_eq!(p.cloud, "aws");
+        assert!(p.has_client_credentials);
+        assert!(!p.has_token);
+        assert_eq!(p.account_id, Some("acc-123".to_string()));
+    }
+
+    #[test]
+    fn create_profile_azure_host() {
+        let mut data = HashMap::new();
+        data.insert("host".to_string(), "https://accounts.azuredatabricks.net".to_string());
+        let profile = create_profile("az-prof", &data);
+        assert!(profile.is_some());
+        assert_eq!(profile.unwrap().cloud, "azure");
+    }
+
+    #[test]
+    fn create_profile_gcp_host() {
+        let mut data = HashMap::new();
+        data.insert("host".to_string(), "https://accounts.gcp.databricks.com".to_string());
+        let profile = create_profile("gcp-prof", &data);
+        assert!(profile.is_some());
+        assert_eq!(profile.unwrap().cloud, "gcp");
+    }
+
+    #[test]
+    fn create_profile_unknown_host_returns_none() {
+        let mut data = HashMap::new();
+        data.insert("host".to_string(), "https://custom.example.com".to_string());
+        assert!(create_profile("unknown", &data).is_none());
+    }
+
+    #[test]
+    fn create_profile_no_host_returns_none() {
+        let data = HashMap::new();
+        assert!(create_profile("no-host", &data).is_none());
+    }
+
+    #[test]
+    fn create_profile_has_token() {
+        let mut data = HashMap::new();
+        data.insert("host".to_string(), "https://accounts.cloud.databricks.com".to_string());
+        data.insert("token".to_string(), "dapi123".to_string());
+        let p = create_profile("tok", &data).unwrap();
+        assert!(p.has_token);
+        assert!(!p.has_client_credentials);
+    }
+
+    #[test]
+    fn create_profile_oauth_auth_type() {
+        let mut data = HashMap::new();
+        data.insert("host".to_string(), "https://accounts.cloud.databricks.com".to_string());
+        data.insert("auth_type".to_string(), "databricks-oauth".to_string());
+        let p = create_profile("oauth", &data).unwrap();
+        assert!(p.has_token);
+    }
+
+    // ── get_databricks_profiles_for_cloud ────────────────────────────────
+
+    #[test]
+    fn profiles_for_cloud_filters_by_cloud_and_account_level() {
+        // This test exercises the filter logic (sort + cloud + account_id + SP creds check).
+        // We can't inject profiles here, but we verify the function doesn't panic on empty.
+        let filtered = get_databricks_profiles_for_cloud("aws");
+        // May or may not have profiles — just verify it doesn't crash
+        for p in &filtered {
+            assert_eq!(p.cloud, "aws");
+            assert!(p.has_client_credentials);
+            assert!(p.account_id.is_some());
+        }
+    }
+
+    // ── get_terraform_download_url ──────────────────────────────────────
+
+    #[test]
+    fn terraform_download_url_is_valid() {
+        let url = get_terraform_download_url();
+        assert!(url.starts_with("https://releases.hashicorp.com/terraform/"));
+        assert!(url.ends_with(".zip"));
+        assert!(url.contains("1.9.8"));
+    }
+
+    // ── get_terraform_install_path ──────────────────────────────────────
+
+    #[test]
+    fn terraform_install_path_is_under_home() {
+        let path = get_terraform_install_path();
+        let path_str = path.to_string_lossy();
+        // Should be ~/.databricks-deployer/bin or "." if no home
+        assert!(
+            path_str.contains(".databricks-deployer") || path_str == ".",
+            "Install path should be under .databricks-deployer/bin or fallback to '.'"
+        );
+    }
+
+    // ── read_databricks_profiles with temp file ─────────────────────────
+
+    #[test]
+    fn read_profiles_from_config_content() {
+        let content = r#"[deployer-aws]
+host = https://accounts.cloud.databricks.com
+account_id = acc-123
+client_id = cid
+client_secret = csec
+
+[workspace-level]
+host = https://my-workspace.cloud.databricks.com
+token = dapi123
+"#;
+        // Parse manually using the same logic to verify it works
+        let mut profiles = Vec::new();
+        let mut current_profile: Option<String> = None;
+        let mut current_data: HashMap<String, String> = HashMap::new();
+
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') { continue; }
+            if line.starts_with('[') && line.ends_with(']') {
+                if let Some(name) = current_profile.take() {
+                    if let Some(p) = create_profile(&name, &current_data) {
+                        profiles.push(p);
+                    }
+                }
+                current_profile = Some(line[1..line.len()-1].to_string());
+                current_data.clear();
+                continue;
+            }
+            if let Some(eq_pos) = line.find('=') {
+                let key = line[..eq_pos].trim().to_lowercase();
+                let value = line[eq_pos + 1..].trim().to_string();
+                current_data.insert(key, value);
+            }
+        }
+        if let Some(name) = current_profile {
+            if let Some(p) = create_profile(&name, &current_data) {
+                profiles.push(p);
+            }
+        }
+
+        // deployer-aws is account-level AWS with SP creds;
+        // workspace-level also matches "aws" because host contains "cloud.databricks.com"
+        assert_eq!(profiles.len(), 2);
+        let deployer = profiles.iter().find(|p| p.name == "deployer-aws").unwrap();
+        assert_eq!(deployer.cloud, "aws");
+        assert!(deployer.has_client_credentials);
+        let ws = profiles.iter().find(|p| p.name == "workspace-level").unwrap();
+        assert!(ws.has_token);
+    }
+}

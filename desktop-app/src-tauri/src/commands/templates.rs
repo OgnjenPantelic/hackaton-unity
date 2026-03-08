@@ -38,13 +38,16 @@ pub fn setup_templates(app: &AppHandle) -> Result<(), String> {
     fs::create_dir_all(&templates_dir).map_err(|e| e.to_string())?;
 
     // Copy embedded templates
-    let resource_dir = app.path().resource_dir().map_err(|e| e.to_string())?;
-
-    let source_templates = resource_dir.join("templates");
+    let source_templates = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d| d.join("templates"))
+        .filter(|p| p.exists());
 
     // Try resource dir first (production), then fall back to dev location
-    let templates_source = if source_templates.exists() {
-        source_templates
+    let templates_source = if let Some(path) = source_templates {
+        path
     } else {
         // In dev builds, CARGO_MANIFEST_DIR points to src-tauri/
         let manifest_candidate =
@@ -393,12 +396,21 @@ mod tests {
         let all_vars = terraform::parse_variables_tf(&content);
         let all_count = all_vars.len();
 
+        let internal_in_template = all_vars
+            .iter()
+            .filter(|v| INTERNAL_VARIABLES.contains(&v.name.as_str()))
+            .count();
+
         let filtered: Vec<_> = all_vars
             .into_iter()
             .filter(|v| !INTERNAL_VARIABLES.contains(&v.name.as_str()))
             .collect();
 
-        assert_eq!(filtered.len(), all_count, "No azure variables should be filtered");
+        assert_eq!(
+            filtered.len(),
+            all_count - internal_in_template,
+            "Only INTERNAL_VARIABLES should be filtered (workspace_url_override)"
+        );
     }
 
     // ── Template copy + parse integration ───────────────────────────────

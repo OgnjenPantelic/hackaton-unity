@@ -10,7 +10,7 @@ export type DeploymentStep = "ready" | "initializing" | "planning" | "review" | 
  * Sub-fields use keys like `workspace_vnet__cidr`; this rebuilds them into
  * `{ workspace_vnet: { cidr: "..." } }` for proper tfvars generation.
  */
-function reconstructObjects(values: Record<string, any>): Record<string, any> {
+export function reconstructObjects(values: Record<string, any>): Record<string, any> {
   const result: Record<string, any> = {};
   const usedKeys = new Set<string>();
 
@@ -184,9 +184,6 @@ export function useDeployment(): UseDeploymentReturn {
     [clearPollInterval]
   );
 
-  // Polls get_deployment_status until status.running is false, then resolves with success/failure.
-  // Used after init and plan to wait for backend completion before proceeding.
-  
   const clearWaitInterval = useCallback(() => {
     if (waitIntervalRef.current) {
       clearInterval(waitIntervalRef.current);
@@ -194,7 +191,8 @@ export function useDeployment(): UseDeploymentReturn {
     }
   }, []);
 
-  // Helper to wait for a terraform command to complete
+  // Polls get_deployment_status until status.running is false, then resolves with success/failure.
+  // Used after init and plan to wait for backend completion before proceeding.
   const waitForCommandComplete = useCallback(async (): Promise<boolean> => {
     clearWaitInterval();
     return new Promise((resolve) => {
@@ -262,6 +260,15 @@ export function useDeployment(): UseDeploymentReturn {
       }
       const values = reconstructObjects(rawValues);
 
+      // Always pass existing metastore ID if detected (regardless of UC catalog enabled)
+      if (ucConfig.metastore_id) {
+        if (template.id === "azure-sra") {
+          values["databricks_metastore_id"] = ucConfig.metastore_id;
+        } else {
+          values["existing_metastore_id"] = ucConfig.metastore_id;
+        }
+      }
+
       // Add Unity Catalog configuration if enabled
       if (ucConfig.enabled) {
         if (template.id === "azure-sra") {
@@ -270,9 +277,6 @@ export function useDeployment(): UseDeploymentReturn {
           }
           if (ucConfig.storage_name) {
             values["uc_storage_name"] = ucConfig.storage_name;
-          }
-          if (ucConfig.metastore_id) {
-            values["databricks_metastore_id"] = ucConfig.metastore_id;
           }
         } else if (template.id === "aws-sra") {
           if (ucConfig.catalog_name) {
@@ -287,12 +291,6 @@ export function useDeployment(): UseDeploymentReturn {
             values["uc_storage_name"] = ucConfig.storage_name;
           }
         }
-      }
-
-      // Always pass existing_metastore_id if detected (regardless of UC catalog enabled)
-      // This prevents Terraform from falling back to unreliable regex-based auto-detection
-      if (ucConfig.metastore_id && template.id !== "azure-sra") {
-        values["existing_metastore_id"] = ucConfig.metastore_id;
       }
 
       // AWS SRA: set metastore_exists based on UC screen auto-detection

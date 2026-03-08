@@ -37,11 +37,23 @@ function CopyButton({ text, onCopy }: { text: string; onCopy: (t: string) => voi
         onClick={handleClick}
         title="Copy"
         style={{
-          background: "transparent", border: "none", color: "var(--success)",
-          cursor: "pointer", fontSize: "14px", padding: "4px"
+          background: "transparent", border: "none", color: "#6b7280",
+          cursor: "pointer", fontSize: "14px", padding: "4px",
+          opacity: 0.7, transition: "opacity 0.15s"
         }}
+        onMouseEnter={e => (e.currentTarget.style.opacity = "1")}
+        onMouseLeave={e => (e.currentTarget.style.opacity = "0.7")}
       >
-        {copied ? "✓" : "📋"}
+        {copied ? (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        ) : (
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+          </svg>
+        )}
       </button>
       {copied && <span className="copy-feedback">Copied!</span>}
     </span>
@@ -72,6 +84,239 @@ function useElapsedTimer(active: boolean) {
   return mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
 }
 
+// ── Resource Timeline ──────────────────────────────────────────────────
+
+interface ResourceEntry {
+  id: string;
+  status: "pending" | "creating" | "created" | "destroying" | "destroyed";
+  duration?: string;
+}
+
+interface TimelineData {
+  resources: ResourceEntry[];
+  plannedToCreate: number;
+  plannedToDestroy: number;
+  createdCount: number;
+  destroyedCount: number;
+}
+
+function useResourceTimeline(output: string | undefined): TimelineData | null {
+  return useMemo(() => {
+    if (!output) return null;
+    const lines = output.split("\n");
+
+    const planned = new Set<string>();
+    const plannedDestroy = new Set<string>();
+    const creating = new Set<string>();
+    const created = new Map<string, string>();
+    const destroying = new Set<string>();
+    const destroyed = new Map<string, string>();
+
+    for (const line of lines) {
+      const willCreate = line.match(/^#\s+(\S+)\s+will be created/);
+      if (willCreate) { planned.add(willCreate[1]); continue; }
+
+      const willDestroy = line.match(/^#\s+(\S+)\s+will be destroyed/);
+      if (willDestroy) { plannedDestroy.add(willDestroy[1]); continue; }
+
+      const willUpdate = line.match(/^#\s+(\S+)\s+will be updated/);
+      if (willUpdate) { planned.add(willUpdate[1]); continue; }
+
+      const creatingMatch = line.match(/^([^:]+):\s*Creating\.\.\./);
+      if (creatingMatch) {
+        const name = creatingMatch[1].trim();
+        creating.add(name);
+        planned.add(name);
+        continue;
+      }
+
+      const createdMatch = line.match(/^([^:]+):\s*Creation complete after\s*(\S+)/);
+      if (createdMatch) {
+        const name = createdMatch[1].trim();
+        created.set(name, createdMatch[2]);
+        creating.delete(name);
+        planned.add(name);
+        continue;
+      }
+
+      const createdNoDuration = line.match(/^([^:]+):\s*Creation complete/);
+      if (createdNoDuration && !createdMatch) {
+        const name = createdNoDuration[1].trim();
+        created.set(name, "");
+        creating.delete(name);
+        planned.add(name);
+        continue;
+      }
+
+      const destroyingMatch = line.match(/^([^:]+):\s*Destroying\.\.\./);
+      if (destroyingMatch) {
+        const name = destroyingMatch[1].trim();
+        destroying.add(name);
+        plannedDestroy.add(name);
+        continue;
+      }
+
+      const destroyedMatch = line.match(/^([^:]+):\s*Destruction complete after\s*(\S+)/);
+      if (destroyedMatch) {
+        const name = destroyedMatch[1].trim();
+        destroyed.set(name, destroyedMatch[2]);
+        destroying.delete(name);
+        plannedDestroy.add(name);
+        continue;
+      }
+
+      const destroyedNoDuration = line.match(/^([^:]+):\s*Destruction complete/);
+      if (destroyedNoDuration && !destroyedMatch) {
+        const name = destroyedNoDuration[1].trim();
+        destroyed.set(name, "");
+        destroying.delete(name);
+        plannedDestroy.add(name);
+        continue;
+      }
+    }
+
+    const planMatch = output.match(/Plan:\s*(\d+)\s*to add,\s*(\d+)\s*to change,\s*(\d+)\s*to destroy/);
+    const plannedTotal = planMatch ? parseInt(planMatch[1], 10) + parseInt(planMatch[2], 10) : planned.size;
+    const plannedDestroyTotal = planMatch ? parseInt(planMatch[3], 10) : plannedDestroy.size;
+
+    const isDestroying = destroying.size > 0 || destroyed.size > 0;
+    let resources: ResourceEntry[];
+
+    if (isDestroying && creating.size === 0 && created.size === 0) {
+      resources = [];
+      for (const [name, dur] of destroyed) {
+        resources.push({ id: name, status: "destroyed", duration: dur || undefined });
+      }
+      for (const name of destroying) {
+        resources.push({ id: name, status: "destroying" });
+      }
+      for (const name of plannedDestroy) {
+        if (!destroying.has(name) && !destroyed.has(name)) {
+          resources.push({ id: name, status: "pending" });
+        }
+      }
+    } else {
+      resources = [];
+      for (const [name, dur] of created) {
+        resources.push({ id: name, status: "created", duration: dur || undefined });
+      }
+      for (const name of creating) {
+        resources.push({ id: name, status: "creating" });
+      }
+      for (const name of planned) {
+        if (!creating.has(name) && !created.has(name)) {
+          resources.push({ id: name, status: "pending" });
+        }
+      }
+    }
+
+    if (resources.length === 0) return null;
+
+    return {
+      resources,
+      plannedToCreate: plannedTotal,
+      plannedToDestroy: plannedDestroyTotal,
+      createdCount: created.size,
+      destroyedCount: destroyed.size,
+    };
+  }, [output]);
+}
+
+function formatResourceName(id: string): string {
+  const parts = id.split(".");
+  if (parts.length >= 2) {
+    const type = parts.slice(0, -1).join(".");
+    const name = parts[parts.length - 1];
+    return `${type}.${name}`;
+  }
+  return id;
+}
+
+const ResourceRowIcon = ({ status }: { status: ResourceEntry["status"] }) => {
+  if (status === "created" || status === "destroyed") {
+    const color = status === "created" ? "var(--success)" : "var(--error)";
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    );
+  }
+  if (status === "creating" || status === "destroying") {
+    return <span className="spinner resource-spinner" />;
+  }
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" opacity="0.4">
+      <circle cx="12" cy="12" r="10" />
+    </svg>
+  );
+};
+
+function ResourceTimeline({ resources, total, completed, isRollingBack }: {
+  resources: ResourceEntry[];
+  total: number;
+  completed: number;
+  isRollingBack: boolean;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const prevCompletedRef = useRef(0);
+
+  useEffect(() => {
+    if (completed > prevCompletedRef.current && scrollRef.current) {
+      const container = scrollRef.current;
+      const activeRow = container.querySelector(".resource-row.creating, .resource-row.destroying");
+      if (activeRow) {
+        activeRow.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+    }
+    prevCompletedRef.current = completed;
+  }, [completed, resources.length]);
+
+  const activeAndDone = resources.filter(r => r.status !== "pending");
+  const pending = resources.filter(r => r.status === "pending");
+  const pendingPreview = pending.slice(0, 3);
+  const pendingRemaining = pending.length - pendingPreview.length;
+
+  return (
+    <div className={`resource-timeline ${isRollingBack ? "rollback" : ""}`}>
+      <div className="resource-timeline-header">
+        <span className="resource-timeline-title">Resource Progress</span>
+        <span className="resource-timeline-count">{completed} / {total}</span>
+      </div>
+      <div className="resource-timeline-list" ref={scrollRef}>
+        {activeAndDone.map((r, i) => (
+          <div
+            key={r.id}
+            className={`resource-row ${r.status}`}
+            style={{ animationDelay: `${Math.min(i * 40, 300)}ms` }}
+          >
+            <ResourceRowIcon status={r.status} />
+            <span className="resource-row-name">{formatResourceName(r.id)}</span>
+            <span className="resource-row-status">
+              {r.status === "creating" && "Creating..."}
+              {r.status === "created" && "Created"}
+              {r.status === "destroying" && "Destroying..."}
+              {r.status === "destroyed" && "Destroyed"}
+            </span>
+            {r.duration && <span className="resource-row-duration">{r.duration}</span>}
+          </div>
+        ))}
+        {pendingPreview.map((r) => (
+          <div key={r.id} className="resource-row pending">
+            <ResourceRowIcon status="pending" />
+            <span className="resource-row-name">{formatResourceName(r.id)}</span>
+            <span className="resource-row-status">Pending</span>
+          </div>
+        ))}
+        {pendingRemaining > 0 && (
+          <div className="resource-row-remaining">
+            {pendingRemaining} more pending...
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DeploymentScreen() {
   const ctx = useWizard();
   const {
@@ -85,6 +330,7 @@ export function DeploymentScreen() {
     copyToClipboard,
     setScreen,
     goBack: onGoBack,
+    selectedTemplate,
   } = ctx;
   const deploymentStep = deployment.deploymentStep;
   const setDeploymentStep = deployment.setDeploymentStep;
@@ -92,6 +338,7 @@ export function DeploymentScreen() {
   const showDetailedLogs = deployment.showDetailedLogs;
   const setShowDetailedLogs = deployment.setShowDetailedLogs;
   const isRollingBack = deployment.isRollingBack;
+  const isSraTemplate = selectedTemplate?.id?.includes("sra") ?? false;
   const templatePath = deployment.templatePath;
   const onOpenTemplateFolder = deployment.openTemplateFolder;
   const onGoToUcConfig = () => setScreen("unity-catalog-config");
@@ -107,26 +354,19 @@ export function DeploymentScreen() {
     return match ? match[1] : null;
   };
 
+  const timeline = useResourceTimeline(status?.output);
+
   const resourceCounts = useMemo(() => {
-    if (!status?.output) return null;
-    const output = status.output;
-    const creatingSet = new Set<string>();
-    const createdSet = new Set<string>();
-    const destroyingSet = new Set<string>();
-    const destroyedSet = new Set<string>();
-    const lines = output.split('\n');
-    for (const line of lines) {
-      const creatingMatch = line.match(/^([^:]+):\s*Creating\.\.\.$/);
-      if (creatingMatch) creatingSet.add(creatingMatch[1].trim());
-      const createdMatch = line.match(/^([^:]+):\s*Creation complete/);
-      if (createdMatch) createdSet.add(createdMatch[1].trim());
-      const destroyingMatch = line.match(/^([^:]+):\s*Destroying\.\.\.$/);
-      if (destroyingMatch) destroyingSet.add(destroyingMatch[1].trim());
-      const destroyedMatch = line.match(/^([^:]+):\s*Destruction complete/);
-      if (destroyedMatch) destroyedSet.add(destroyedMatch[1].trim());
-    }
-    return { creating: creatingSet.size, created: createdSet.size, destroying: destroyingSet.size, destroyed: destroyedSet.size };
-  }, [status?.output]);
+    if (!timeline) return null;
+    return {
+      creating: timeline.resources.filter(r => r.status === "creating").length,
+      created: timeline.createdCount,
+      destroying: timeline.resources.filter(r => r.status === "destroying").length,
+      destroyed: timeline.destroyedCount,
+      plannedToCreate: timeline.plannedToCreate,
+      plannedToDestroy: timeline.plannedToDestroy,
+    };
+  }, [timeline]);
 
   const parsedOutputs = useMemo(() => {
     if (!status?.output) return {};
@@ -142,10 +382,12 @@ export function DeploymentScreen() {
     ready: { title: "Ready to Deploy", description: "Click below to start the deployment process." },
     initializing: { title: "Preparing Environment", description: "Setting up Terraform and downloading required providers..." },
     planning: { title: "Analyzing Changes", description: "Determining what resources will be created..." },
-    review: { title: "Review & Confirm", description: "Review the planned changes and confirm to proceed." },
+    review: { title: "Review & Confirm", description: "Enable 'Show detailed logs' below to review the planned changes, then confirm to proceed." },
     deploying: isRollingBack 
       ? { title: "Cleaning Up Resources", description: "Removing deployed resources. This may take several minutes..." }
-      : { title: "Creating Workspace", description: "Deploying your Databricks workspace. Typical time: 10-15 minutes." },
+      : { title: "Creating Workspace", description: isSraTemplate
+          ? "Deploying your SRA workspace. Typical time: 20-40 minutes."
+          : "Deploying your Databricks workspace. Typical time: 10-15 minutes." },
     complete: isRollingBack
       ? { title: "Cleanup Complete!", description: "All resources have been successfully removed." }
       : { title: "Deployment Complete!", description: "Your Databricks workspace has been successfully created." },
@@ -209,16 +451,40 @@ export function DeploymentScreen() {
             <div style={{ marginTop: "12px", fontSize: "14px", color: "var(--text-secondary)" }}>
               {deploymentStep === "deploying" && resourceCounts && (resourceCounts.creating > 0 || resourceCounts.destroying > 0) ? (
                 isRollingBack 
-                  ? `${resourceCounts.destroyed} of ${resourceCounts.destroying} resources removed`
-                  : `${resourceCounts.created} of ${resourceCounts.creating} resources created`
+                  ? `${resourceCounts.destroyed} of ${resourceCounts.plannedToDestroy || resourceCounts.destroying} resources removed`
+                  : `${resourceCounts.created} of ${resourceCounts.plannedToCreate || resourceCounts.creating} resources created`
               ) : null}
-              <span style={{ color: "var(--text-muted)", marginLeft: resourceCounts?.creating ? "12px" : "0", fontSize: "13px" }}>
+              <span style={{ color: "var(--text-muted)", marginLeft: (isRollingBack ? resourceCounts?.destroying : resourceCounts?.creating) ? "12px" : "0", fontSize: "13px" }}>
                 Elapsed: {elapsedStr}
               </span>
             </div>
+            {deploymentStep === "deploying" && resourceCounts && (resourceCounts.plannedToCreate > 0 || resourceCounts.plannedToDestroy > 0) && (
+              <div className={`deployment-progress-bar ${isRollingBack ? "rollback" : ""}`}>
+                <div
+                  className="deployment-progress-fill"
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      isRollingBack
+                        ? (resourceCounts.destroyed / (resourceCounts.plannedToDestroy || 1)) * 100
+                        : (resourceCounts.created / (resourceCounts.plannedToCreate || 1)) * 100
+                    )}%`,
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {deploymentStep === "deploying" && timeline && timeline.resources.length > 0 && (
+        <ResourceTimeline
+          resources={timeline.resources}
+          total={isRollingBack ? timeline.plannedToDestroy : timeline.plannedToCreate}
+          completed={isRollingBack ? timeline.destroyedCount : timeline.createdCount}
+          isRollingBack={isRollingBack}
+        />
+      )}
 
       {error && <div className="alert alert-error">{error}</div>}
 
@@ -243,12 +509,6 @@ export function DeploymentScreen() {
           </div>
         )}
       </div>
-
-      {showDetailedLogs && status?.output && (
-        <div className="output expanded terraform-log">
-          {formatTerraformOutput(status.output)}
-        </div>
-      )}
 
       <div style={{ marginTop: "24px", display: "flex", gap: "12px", justifyContent: "center" }}>
         {isWorking && (
@@ -385,6 +645,15 @@ export function DeploymentScreen() {
           </div>
         )}
       </div>
+
+      {showDetailedLogs && status?.output && (
+        <div className="log-panel">
+          <CopyButton text={status.output} onCopy={copyToClipboard} />
+          <div className="output expanded terraform-log">
+            {formatTerraformOutput(status.output)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

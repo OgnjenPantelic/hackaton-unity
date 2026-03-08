@@ -5,11 +5,11 @@ variable "resource_prefix" {
 
 /*
 Databricks workspace url which will be used for authentication by Terraform
-Terraform needs one Worspace which will be used as entry point for all Databricks related operations
+Terraform needs one Workspace which will be used as entry point for all Databricks related operations
 */
 variable "databricks_workspace_url" {}
 
-#list of worspaces to be attached to the created metastore
+#list of workspaces to be attached to the created metastore
 variable "databricks_workspace_ids" {
   type    = list(string)
   default = []

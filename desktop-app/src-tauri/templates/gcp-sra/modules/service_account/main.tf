@@ -61,7 +61,7 @@ resource "google_project_iam_custom_role" "workspace_creator" {
 
 }
 
-# ASSIGNGS WORKSPACE CREATOR ROLE TO THE SERVICE ACCOUNT
+# ASSIGNING WORKSPACE CREATOR ROLE TO THE SERVICE ACCOUNT
 resource "google_project_iam_member" "workspace_creator_can_create_workspaces" {
   project = var.project
   role    = google_project_iam_custom_role.workspace_creator.id

@@ -305,7 +305,7 @@ export function GcpCredentialsScreen() {
       </button>
       <h1>GCP Credentials</h1>
       <p className="subtitle">
-        Configure your Google Cloud credentials for deploying resources.
+        Configure your GCP credentials for deploying resources.
       </p>
 
       {gcpLoading && (
@@ -373,7 +373,7 @@ export function GcpCredentialsScreen() {
                   type="button"
                   className="btn btn-small btn-secondary"
                   onClick={checkGcpCredentials}
-                  disabled={gcpLoading}
+                  disabled={gcpLoading || gcpCheckingPermissions}
                 >
                   {gcpLoading ? "Verifying..." : "Verify"}
                 </button>
@@ -549,7 +549,7 @@ export function GcpCredentialsScreen() {
                             type="button"
                             className="btn btn-small btn-secondary"
                             onClick={checkGcpCredentials}
-                            disabled={gcpLoading}
+                            disabled={gcpLoading || gcpCheckingPermissions}
                           >
                             {gcpLoading ? "Verifying..." : "Verify"}
                           </button>

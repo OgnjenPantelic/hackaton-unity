@@ -1,4 +1,4 @@
-import { createContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   DependencyStatus,
@@ -53,6 +53,7 @@ export interface WizardContextValue {
   // Templates
   templates: Template[];
   selectedTemplate: Template | null;
+  loadingTemplate: string | null;
   selectTemplate: (template: Template) => Promise<void>;
 
   // Credentials
@@ -145,6 +146,8 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [installingTerraform, setInstallingTerraform] = useState(false);
   const [loadingCloud, setLoadingCloud] = useState<string | null>(null);
+  const [loadingTemplate, setLoadingTemplate] = useState<string | null>(null);
+  const templateRequestRef = useRef<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [formSubmitAttempted, setFormSubmitAttempted] = useState(false);
   const [tagPairs, setTagPairs] = useState<{ key: string; value: string }[]>([]);
@@ -286,38 +289,56 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   const selectTemplate = async (template: Template) => {
     const isSameTemplate = selectedTemplate?.id === template.id;
     const hasExistingValues = Object.keys(formValues).length > 0;
+    const requestId = template.id;
 
+    templateRequestRef.current = requestId;
     setSelectedTemplate(template);
+    setLoadingTemplate(template.id);
     setLoading(true);
     setFormSubmitAttempted(false);
-    try {
-      const vars = await invoke<TerraformVariable[]>("get_template_variables", {
-        templateId: template.id,
-      });
-      setVariables(vars);
 
-      if (!isSameTemplate || !hasExistingValues) {
-        const defaults = initializeFormDefaults(vars, {
-          azureUser: azure.account?.user,
-          gcpAccount: gcp.validation?.account,
-        });
-        const templateTagValue = template.id.replace(/-/g, "_");
-        const defaultTag = { key: "databricks_deployer_template", value: templateTagValue };
-        defaults.tags = JSON.stringify({ [defaultTag.key]: defaultTag.value });
-        setFormValues(defaults);
-        setTagPairs([defaultTag]);
-      }
+    setTimeout(async () => {
+      try {
+        const [vars] = await Promise.all([
+          invoke<TerraformVariable[]>("get_template_variables", {
+            templateId: template.id,
+          }),
+          new Promise((resolve) => setTimeout(resolve, POLLING.MIN_LOADING_TIME)),
+        ]);
 
-      if (selectedCloud === CLOUDS.AZURE) {
-        loadAzureResourceGroups();
-        loadAzureVnets();
+        if (templateRequestRef.current !== requestId) return;
+
+        setVariables(vars);
+
+        if (!isSameTemplate || !hasExistingValues) {
+          const defaults = initializeFormDefaults(vars, {
+            azureUser: azure.account?.user,
+            gcpAccount: gcp.validation?.account,
+          });
+          const templateTagValue = template.id.replace(/-/g, "_");
+          const defaultTag = { key: "databricks_deployer_template", value: templateTagValue };
+          defaults.tags = JSON.stringify({ [defaultTag.key]: defaultTag.value });
+          setFormValues(defaults);
+          setTagPairs([defaultTag]);
+        }
+
+        if (selectedCloud === CLOUDS.AZURE) {
+          loadAzureResourceGroups();
+          loadAzureVnets();
+        }
+      } catch (e: unknown) {
+        if (templateRequestRef.current !== requestId) return;
+        setError(`Failed to load template: ${String(e)}`);
+      } finally {
+        if (templateRequestRef.current === requestId) {
+          setLoading(false);
+          setLoadingTemplate(null);
+        }
       }
-    } catch (e: unknown) {
-      setError(`Failed to load template: ${String(e)}`);
-    } finally {
-      setLoading(false);
-    }
-    setScreen("configuration");
+      if (templateRequestRef.current === requestId) {
+        setScreen("configuration");
+      }
+    }, UI.REACT_PAINT_DELAY);
   };
 
   const clearSensitiveCredentials = useCallback(() => {
@@ -613,7 +634,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     screen, setScreen, goBack,
     selectedCloud, loadingCloud, selectCloud,
     dependencies, installingTerraform, installTerraform, recheckDependencies: checkDependencies, continueFromDependencies,
-    templates, selectedTemplate, selectTemplate,
+    templates, selectedTemplate, loadingTemplate, selectTemplate,
     credentials, setCredentials,
     aws, azure, gcp,
     loadAwsProfiles, handleAwsProfileChange, handleAwsSsoLogin,

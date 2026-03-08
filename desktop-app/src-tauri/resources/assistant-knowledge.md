@@ -10,24 +10,24 @@ Databricks Deployer helps users deploy Databricks workspaces on AWS, Azure, or G
 
 1. **Welcome** - Introduction. Click **"Get Started"** to begin.
 2. **Cloud Selection** - Choose AWS, Azure, or GCP by clicking a cloud card. Use **"← Back"** to return.
-3. **Dependencies** - Checks Terraform CLI and Databricks CLI are installed. Click **"Install"** to auto-install Terraform. Click **"Continue →"** to proceed.
+3. **Dependencies** - Checks Terraform CLI, Git, and optionally cloud CLIs (AWS/Azure/GCP) and Databricks CLI are installed. Terraform and Git are required to continue. Click **"Install"** to auto-install Terraform. Click **"Continue →"** to proceed.
 4. **Cloud Credentials** - Authenticate with the chosen cloud provider. Use **"Verify"** to check identity, **"SSO Login"** (AWS) or **"Login"** (Azure) for authentication, **"Verify Credentials"** (GCP). Click **"Validate & Continue →"** to proceed.
 5. **Databricks Credentials** - Authenticate with Databricks account (Account ID + service principal or CLI profile). Use **"+ Add service principal as profile"** to add a new profile. Click **"Validate & Continue →"** to proceed.
 6. **Template Selection** - Choose a Terraform deployment template by clicking a template card. Each template defines the cloud infrastructure that will be created.
-7. **Configuration** - Fill in the template's Terraform variables: workspace name, region, networking, tags, etc. These values are used to generate the Terraform input file for deployment. Click **"Continue →"** to proceed.
+7. **Configuration** - Fill in the template's Terraform variables: workspace name, region, networking, tags, etc. These values are used to generate the Terraform input file for deployment. On Azure, clicking **"Continue →"** pre-checks whether resource group names already exist — if a conflict is found a dialog offers **"Go Back"** or **"Continue Anyway"**. Resources tagged by a previous deployer run are allowed through automatically.
 8. **Unity Catalog Config** - Optionally enable Unity Catalog with catalog name and storage location. Use **"Refresh"** to re-check for existing metastore. Click **"Create Workspace →"** to proceed.
 9. **Deployment** - Runs Terraform init, plan, review, apply with real-time output. Use **"Confirm & Deploy →"** to apply, **"Cancel"** to abort, **"Go Back & Edit"** to return to configuration. After deployment: **"Open Workspace →"** on success, **"Try Again"** to retry, **"Cleanup Resources"** or **"Delete Workspace & Resources"** to rollback.
 
 # Cloud Provider Authentication
 
 ## AWS
-- **AWS CLI Profile (recommended)**: Select from ~/.aws/credentials or ~/.aws/config. Supports SSO - click **"SSO Login"** to authenticate. Click **"Verify"** to check identity with sts get-caller-identity.
+- **AWS CLI Profile (recommended)**: Select from ~/.aws/credentials or ~/.aws/config. Supports SSO - click **"SSO Login"** to authenticate (non-blocking, opens browser; while login is in progress a **"Cancel"** button replaces the Verify/SSO buttons). Click **"Verify"** to check identity with sts get-caller-identity.
 - **Access Keys**: Enter Access Key ID, Secret Access Key, and optional Session Token (only for temporary STS credentials).
 - Permission check warns about missing IAM, EC2, S3, VPC permissions (warning only, doesn't block).
 - Click **"Validate & Continue →"** to proceed to next step.
 
 ## Azure
-- **Azure CLI (recommended)**: Run `az login` first (click **"Login"** button), then verify. Click **"Verify"** to check identity. Select a subscription from dropdown.
+- **Azure CLI (recommended)**: Click **"Login"** to open `az login` in the browser (non-blocking, 5-minute timeout). While login is in progress a **"Cancel"** button replaces the Login/Verify buttons. After logging in the button changes to **"Switch Account"** to re-authenticate with a different identity. Click **"Verify"** to check identity. Select a subscription from dropdown.
 - **Service Principal**: Enter Tenant ID, Subscription ID, Client ID, Client Secret.
 - Checks for Contributor + User Access Administrator roles.
 - After auth, asks if you're a Databricks Account Admin to optionally use Azure identity directly.
@@ -108,7 +108,7 @@ Each cloud has two template options:
 - **SRA (Security Reference Architecture)** — Enterprise-grade deployment for production and regulated environments. No public internet access (uses PrivateLink / Private Endpoints / PSC), customer-managed encryption keys (CMK/CMEK), compliance controls (Compliance Security Profile, Security Analysis Tool, audit logs), modular architecture. More configuration complexity but much stronger security posture.
 
 ## AWS Security Reference Architecture (SRA)
-Creates: VPC with PrivateLink endpoints (backend REST + SCC relay), CMK encryption (KMS keys for managed services and managed disks), cross-account IAM role, S3 root bucket with restrictive policy, Databricks workspace, network connectivity configuration (NCC), network policy, audit log delivery, Unity Catalog with isolated catalog. Optionally enables SAT and Compliance Security Profile.
+Creates: VPC with PrivateLink endpoints (backend REST + SCC relay), CMK encryption (KMS keys for managed services and managed disks), cross-account IAM role, S3 root bucket with restrictive policy, Databricks workspace, network connectivity configuration (NCC) for serverless private endpoints, network policy for serverless egress control, audit log delivery, Unity Catalog with isolated catalog. Optionally enables SAT and Compliance Security Profile.
 
 ### Workspace
 - **Resource Prefix** — prefix for all resource names (1-26 chars, lowercase letters, digits, hyphens, dots only).
@@ -147,44 +147,49 @@ Creates: VPC with PrivateLink endpoints (backend REST + SCC relay), CMK encrypti
 - **Resource Tags** — optional key-value pairs for cost tracking.
 
 ## Azure Security Reference Architecture (SRA)
-Creates: Hub-spoke VNet architecture with hub workspace (webauth) and spoke workspace, Private Endpoints (DBFS, backend, webauth), Azure Firewall with FQDN filtering, Key Vault with CMK encryption (managed disks + managed services), NCC + network policy, Unity Catalog. Optionally enables SAT.
+Creates: Hub-spoke VNet architecture with hub workspace (webauth) and spoke workspace, Private Endpoints (DBFS, backend, webauth), Azure Firewall with FQDN filtering, Key Vault with CMK encryption (managed disks + managed services), Network Connectivity Config (NCC) for serverless private endpoints, network policy for serverless egress control, Unity Catalog. Optionally enables SAT.
 
 ### Workspace
 - **Resource Suffix** — suffix for naming workspace resources (e.g. "dbx-dev", "sra").
 - **Location** — Azure region.
 
 ### Hub Infrastructure
-- **Create Hub** toggle (default: on) — when enabled, creates hub infrastructure (firewall, Key Vault, Unity Catalog, webauth workspace). When disabled, provide existing hub VNet, NCC, network policy, and CMK IDs.
+- **Create Hub & Account Resources** toggle (default: on) — when enabled, creates both Azure hub infrastructure (firewall, VNet, Key Vault, webauth workspace) and Databricks account-level resources (NCC, network policy, metastore). Also controls visibility of SAT configuration, Allowed FQDNs, and hub naming fields — these are hub-only features and are hidden when disabled. When disabled, hub resources must already exist and their IDs must be provided.
 - **Hub VNet CIDR** — CIDR for the hub Virtual Network (default: 10.100.0.0/20, required when creating hub).
 - **Hub Resource Suffix** — suffix for naming hub resources (required when creating hub).
 - **Existing Hub VNet** — existing hub VNet details (route table ID, VNet ID — required when not creating hub).
-- **Existing NCC ID**, **Existing NCC Name**, **Existing Network Policy ID** — required when not creating hub.
+
+#### Existing Databricks Account Resources
+When "Create Hub & Account Resources" is disabled, the following Databricks account-level resources must exist before deploying a workspace. These are **not** Azure resources — they are created via the Databricks Account Console or API. The UI groups them under an "Existing Databricks Account Resources" subsection within Hub Infrastructure.
+- **Existing NCC ID** — required when using existing hub. ID of an existing Network Connectivity Config. The NCC controls serverless compute private endpoints. Find it in Account Console → Settings → Network connectivity configurations.
+- **Existing NCC Name** — display name of the NCC. Required for private endpoint setup. Find it alongside the NCC ID in Account Console → Settings → Network connectivity configurations.
+- **Existing Network Policy ID** — required when using existing hub. ID of an existing network policy that controls serverless egress rules. Find it in Account Console → Settings → Network policies.
 
 ### Workspace Network
 - **Create Workspace VNet** toggle (default: on) — when enabled, creates a new spoke VNet. When disabled, provide existing network configuration.
 - **Workspace VNet CIDR** — CIDR for the spoke network (default: 10.0.0.0/20). The spoke VNet is peered with the hub.
-- **Existing Workspace VNet** — existing network configuration (VNet ID, subnet IDs, NSG association IDs, DNS zone IDs — required when not creating VNet).
+- **Subnet Layout** — how to divide the VNet into subnets (2, 4, 8, or 16 subnets). More subnets means smaller subnets with fewer nodes each.
+- **Existing Workspace VNet** — existing network configuration (VNet ID, subnet IDs, NSG association IDs, DNS zone IDs — required when not creating VNet). Each field includes Azure Portal navigation guidance (e.g. Virtual Networks → Subnets, Private DNS Zones).
 - **Create Workspace Resource Group** toggle — when disabled, provide existing resource group name.
 
 ### Firewall Rules
-- **Allowed FQDNs** — domains the spoke workspace can access through the firewall (e.g. python.org, pypi.org for SAT or package installation). By default no internet access is allowed.
-- **Hub Allowed URLs** — domains serverless compute in the hub workspace can access (needed for SAT on serverless).
+- **Allowed FQDNs** — domains workspaces can reach from classic compute (via firewall) and serverless compute (via network policy). By default no internet access is allowed. Only visible when creating hub infrastructure. Includes quick-add groups for Azure Management, Python packages, and R packages.
 
 ### Encryption
 - **CMK Enabled** toggle (default: on) — enable customer-managed keys for workspace encryption using Azure Key Vault.
-- **Existing CMK IDs** — Key Vault ID, managed disk key ID, managed services key ID (required when create_hub is false and CMK is enabled).
+- **Existing CMK IDs** — Key Vault ID, managed disk key ID, managed services key ID (required when create_hub is false and CMK is enabled). To skip providing these, disable the CMK toggle. Each field includes Azure Portal navigation guidance (Key Vaults → Properties/Keys).
 
 ### Security & Compliance
 - **Workspace Security Compliance** — compliance profile enablement, compliance standards list, automatic cluster update, enhanced security monitoring. If a compliance standard is selected, compliance security profile must be enabled.
 
 ### Metastore & Catalog
-- **Databricks Metastore ID** — ID of an existing metastore (required when not creating hub).
+- **Databricks Metastore ID** — ID of an existing Unity Catalog metastore. Required when not creating hub. Find it in Account Console → Data → Metastores.
 - **Catalog Name** — custom name for the workspace catalog. Defaults to the resource suffix.
 - **Catalog Storage Name** — custom storage account name for the catalog.
 
 ### Optional Settings
-- **SAT Configuration** — enable/disable Security Analysis Tool, schema name, catalog name, serverless toggle. When SAT is enabled on classic compute, required FQDNs (management.azure.com, login.microsoftonline.com, python.org, pypi.org, etc.) must be added to allowed_fqdns. When running SAT on serverless, those FQDNs go in hub_allowed_urls instead.
-- **SAT Service Principal** — optional Client ID + Client Secret for SAT. If not provided, one is created automatically.
+- **SAT Configuration** — enable/disable Security Analysis Tool, schema name, catalog name, serverless toggle. SAT is deployed to the hub/WEBAUTH workspace only, so this section is only visible when "Create Hub & Account Resources" is enabled. When SAT is enabled, the required FQDNs (Azure Management and Python Packages groups) must be added to Allowed FQDNs — the UI warns if they are missing.
+- **SAT Service Principal** — optional Client ID + Client Secret for SAT. Only visible when creating hub. If not provided, one is created automatically.
 
 ### Tags
 - **Tags** — optional key-value pairs.
@@ -210,6 +215,7 @@ Creates: VPC with hardened firewall rules, optional PSC endpoints (workspace + r
 
 ### Security & Compliance
 - **Harden Network** toggle (default: on) — enables strict VPC firewall rules that restrict egress traffic.
+- **Control Plane IP Ranges** — regional Databricks control-plane IP/CIDR ranges. Required when network hardening is enabled and PSC is not used. See Databricks docs for region-specific IPs.
 - **Use Existing CMEK** toggle — when off, creates new Cloud KMS resources with **Key Name** (default: "sra-key") and **Keyring Name** (default: "sra-keyring"). When on, provide **CMEK Resource ID**.
 
 ### Optional Settings
@@ -223,18 +229,26 @@ Unified governance for data and AI. When enabled:
 - Configure catalog name and storage (S3/Azure Storage/GCS - must be globally unique).
 - Premium SKU required on Azure.
 - Regardless of the choice of the user, we will always assign a metastore (enable UC). The main choice for the user is if they want to create a new catalog or not for this workspace.
+- A **permission acknowledgment checkbox** is always required when Unity Catalog is enabled — the user must confirm they have the necessary permissions to create a catalog before proceeding.
 - Click **"Create Workspace →"** to proceed to deployment.
 
 # Deployment Process
 1. **Init** - Downloads Terraform providers.
 2. **Plan** - Shows resources to create/modify/destroy.
-3. **Review** - User reviews the plan and clicks **"Confirm & Deploy →"** to proceed.
-4. **Apply** - Creates resources (typically 5-15 minutes). Use **"Cancel"** to abort deployment. Use **"Go Back & Edit"** to return to configuration screen.
+3. **Review** - User reviews the plan (enable **"Show detailed logs"** to inspect it) and clicks **"Confirm & Deploy →"** to proceed.
+4. **Apply** - Creates resources. Standard templates typically take 10-15 minutes; SRA templates typically take 20-40 minutes due to additional resources (PrivateLink, CMK, hub infrastructure, etc.). Use **"Cancel"** to abort deployment. Use **"Go Back & Edit"** to return to configuration screen.
+
+During Apply the deployment screen shows:
+- A **resource progress timeline** listing each resource with its status (pending → creating → created) and creation duration.
+- A **progress bar** showing how many resources have been created out of the total planned.
+- An elapsed-time counter.
+
+**Auto-import on retry:** If Apply fails because resources already exist (e.g. from a previous partial deployment), the app automatically detects the conflicting resources, runs `terraform import` to adopt them into the state, and retries the apply. This can repeat up to 3 times. Supported resource types include Azure ARM resources, Databricks private endpoint rules, and Databricks network policies.
 
 **After deployment:**
 - **Success**: Click **"Open Workspace →"** to access the new workspace, **"Start New Deployment"** to create another, or **"Open Folder"** to view deployment files.
 - **Failure**: Click **"Try Again"** to retry deployment, or **"Cleanup Resources"** to rollback and delete created resources.
-- **Rollback**: Click **"Delete Workspace & Resources"** to destroy the workspace. After rollback completes, click **"Start New Deployment"** to begin again.
+- **Rollback**: Click **"Delete Workspace & Resources"** to destroy the workspace. During rollback the resource timeline shows resources being destroyed with the same progress tracking. After rollback completes, click **"Start New Deployment"** to begin again.
 
 # Git Integration
 After a successful deployment, a **Git Integration** card appears on the Deployment screen. It allows users to version-control their deployment.
@@ -258,7 +272,8 @@ The `.gitignore` excludes sensitive files (`.terraform/`, `terraform.tfstate`, `
 - "GCP impersonation mismatch": Click **"Verify Credentials"** button to auto-fill the correct SA email.
 - "Databricks Account ID invalid": It's a UUID from Account Console, not the workspace URL.
 - "Permission denied" during deploy: Check permission warnings from credential screens. Click **"Go Back & Edit"** to fix credentials.
-- "Resource already exists": Previous deployment left resources. Click **"Cleanup Resources"** or **"Delete Workspace & Resources"** to rollback, or clean up manually.
+- "Resource already exists": Previous deployment left resources. The app will automatically attempt to import the existing resources and retry the deployment. If auto-import fails, click **"Cleanup Resources"** or **"Delete Workspace & Resources"** to rollback, or clean up manually.
+- "Resource Name Conflict Detected" dialog on Configuration screen: Azure resource group names already exist in the subscription. Resources created by a previous deployer run (tagged with `databricks_deployer_template`) are allowed through automatically. For untagged conflicts choose **"Go Back"** to change the name or **"Continue Anyway"** to proceed.
 - "Storage name already taken": S3 bucket and Azure Storage names must be globally unique. Click **"Go Back & Edit"** to change storage name.
 - "State lock" error: Another Terraform process may be running. Wait for it to finish or manually remove the lock file in the deployment directory.
 - "Provider authentication failed": Credentials may have expired. Go back to the credential screen and re-authenticate.

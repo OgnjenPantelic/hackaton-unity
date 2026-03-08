@@ -15,8 +15,10 @@ export function AwsCredentialsScreen() {
   const { checkingPermissions, showPermissionWarning, setShowPermissionWarning } = ctx;
   const { permissionWarningAcknowledged, setPermissionWarningAcknowledged } = ctx;
   const validationAttempted = ctx.awsValidationAttempted;
+  const awsLoginInProgress = ctx.aws.loginInProgress;
   const onCheckIdentity = ctx.aws.checkIdentity;
   const onSsoLogin = ctx.handleAwsSsoLogin;
+  const onCancelSsoLogin = ctx.aws.cancelSsoLogin;
   const onProfileChange = ctx.handleAwsProfileChange;
   const onValidateAndContinue = ctx.validateAndContinueFromAwsCredentials;
   const onContinueWithWarning = ctx.continueFromCloudWithWarning;
@@ -40,13 +42,13 @@ export function AwsCredentialsScreen() {
         Configure your AWS credentials for deploying resources.
       </p>
 
-      {awsLoading && (
+      {awsLoading && !awsLoginInProgress && (
         <Alert type="loading">Verifying AWS credentials...</Alert>
       )}
 
       {awsAuthError && <Alert type="error" style={{ whiteSpace: "pre-line" }}>{awsAuthError}</Alert>}
 
-      <div className="form-section" style={{ opacity: awsLoading ? 0.6 : 1 }}>
+      <div className="form-section" style={{ opacity: awsLoading && !awsLoginInProgress ? 0.6 : 1 }}>
         <h3>Authentication Method</h3>
         
         <div className="auth-mode-selector">
@@ -105,7 +107,7 @@ export function AwsCredentialsScreen() {
                   className="btn btn-secondary"
                   style={{ marginTop: "12px" }}
                   onClick={onRefreshProfiles}
-                  disabled={awsLoading}
+                  disabled={awsLoading || checkingPermissions}
                 >
                   {awsLoading ? "Verifying..." : "Verify"}
                 </button>
@@ -128,37 +130,53 @@ export function AwsCredentialsScreen() {
                 <div className="form-group">
                   <label>Status</label>
                   <div className="auth-status">
-                    {awsLoading && <span className="spinner" />}
-                    {awsIdentity && (
+                    {awsLoginInProgress && <span className="spinner" />}
+                    {awsLoginInProgress && (
+                      <span style={{ color: "#888" }}>Waiting for browser login...</span>
+                    )}
+                    {!awsLoginInProgress && awsLoading && <span className="spinner" />}
+                    {!awsLoginInProgress && awsIdentity && (
                       <span className="success">
                         Account: {awsIdentity.account}
                       </span>
                     )}
-                    {awsAuthError && !awsLoading && (
+                    {!awsLoginInProgress && awsAuthError && !awsLoading && (
                       <span className="error">{awsAuthError}</span>
                     )}
-                    {!awsIdentity && !awsAuthError && !awsLoading && (
+                    {!awsLoginInProgress && !awsIdentity && !awsAuthError && !awsLoading && (
                       <span style={{ color: "#888" }}>Click Verify to check credentials.</span>
                     )}
                   </div>
                   <div style={{ marginTop: "8px", display: "flex", gap: "8px" }}>
-                    <button
-                      type="button"
-                      className="btn btn-small btn-secondary"
-                      onClick={() => onCheckIdentity(credentials.aws_profile || "default")}
-                      disabled={awsLoading}
-                    >
-                      {awsLoading ? "Verifying..." : "Verify"}
-                    </button>
-                    {awsProfiles.find(p => p.name === credentials.aws_profile)?.is_sso && (
+                    {awsLoginInProgress ? (
                       <button
                         type="button"
-                        className="btn btn-small"
-                        onClick={onSsoLogin}
-                        disabled={awsLoading}
+                        className="btn btn-small btn-secondary"
+                        onClick={onCancelSsoLogin}
                       >
-                        SSO Login
+                        Cancel
                       </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-small btn-secondary"
+                          onClick={() => onCheckIdentity(credentials.aws_profile || "default")}
+                          disabled={awsLoading || checkingPermissions}
+                        >
+                          {awsLoading ? "Verifying..." : "Verify"}
+                        </button>
+                        {awsProfiles.find(p => p.name === credentials.aws_profile)?.is_sso && (
+                          <button
+                            type="button"
+                            className="btn btn-small"
+                            onClick={onSsoLogin}
+                            disabled={awsLoading || checkingPermissions}
+                          >
+                            SSO Login
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

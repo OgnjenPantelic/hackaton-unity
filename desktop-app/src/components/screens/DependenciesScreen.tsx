@@ -165,7 +165,7 @@ const DependenciesScreen: React.FC = () => {
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <span className="dependency-badge">Optional</span>
             {!cloudCliDep?.installed && (
-              <a href={cloudCliDep?.install_url} target="_blank" className="btn btn-secondary btn-small">
+              <a href={cloudCliDep?.install_url} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-small">
                 Install Guide
               </a>
             )}
@@ -181,7 +181,7 @@ const DependenciesScreen: React.FC = () => {
                 <div className="dependency-version">{databricksCli.version}</div>
               )}
               {!databricksCli?.installed && (
-                <div className="help-text">Enables profile-based authentication (OAuth or service principal).</div>
+                <div className="dependency-note">Enables profile-based authentication (OAuth or service principal).</div>
               )}
             </div>
           </div>

@@ -236,4 +236,95 @@ describe("useAwsAuth", () => {
       expect(result.current.permissionCheck).toBeNull();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // handleSsoLogin
+  // ---------------------------------------------------------------------------
+  describe("handleSsoLogin", () => {
+    it("invokes aws_sso_login and sets loading state", async () => {
+      mockInvoke.mockResolvedValueOnce(undefined); // aws_sso_login
+
+      const { result } = renderHook(() => useAwsAuth());
+
+      await act(async () => {
+        await result.current.handleSsoLogin("sso-profile");
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith("aws_sso_login", { profile: "sso-profile" });
+    });
+
+    it("sets error on failure (non LOGIN_CANCELLED)", async () => {
+      mockInvoke.mockRejectedValueOnce("SSO flow failed");
+
+      const { result } = renderHook(() => useAwsAuth());
+
+      await act(async () => {
+        await result.current.handleSsoLogin("bad-profile");
+      });
+
+      expect(result.current.error).toBe("SSO flow failed");
+      expect(result.current.loginInProgress).toBe(false);
+      expect(result.current.loading).toBe(false);
+    });
+
+    it("does not set error when LOGIN_CANCELLED", async () => {
+      mockInvoke.mockRejectedValueOnce("LOGIN_CANCELLED");
+
+      const { result } = renderHook(() => useAwsAuth());
+
+      await act(async () => {
+        await result.current.handleSsoLogin("my-profile");
+      });
+
+      expect(result.current.error).toBeNull();
+      expect(result.current.loginInProgress).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // cancelSsoLogin
+  // ---------------------------------------------------------------------------
+  describe("cancelSsoLogin", () => {
+    it("invokes cancel_cli_login and resets loginInProgress", async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      const { result } = renderHook(() => useAwsAuth());
+
+      await act(async () => {
+        await result.current.cancelSsoLogin();
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith("cancel_cli_login");
+      expect(result.current.loginInProgress).toBe(false);
+    });
+
+    it("still resets loginInProgress on cancellation error", async () => {
+      mockInvoke.mockRejectedValueOnce(new Error("cancel failed"));
+
+      const { result } = renderHook(() => useAwsAuth());
+
+      await act(async () => {
+        await result.current.cancelSsoLogin();
+      });
+
+      expect(result.current.loginInProgress).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // cleanup
+  // ---------------------------------------------------------------------------
+  describe("cleanup", () => {
+    it("clears SSO polling on cleanup", () => {
+      const { result } = renderHook(() => useAwsAuth());
+
+      // Just verify it doesn't throw
+      act(() => {
+        result.current.cleanup();
+      });
+
+      // After cleanup, loginInProgress should be false
+      expect(result.current.loginInProgress).toBe(false);
+    });
+  });
 });

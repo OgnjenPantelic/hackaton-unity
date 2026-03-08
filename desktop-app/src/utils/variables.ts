@@ -38,15 +38,13 @@ const FIELD_ORDER: Record<string, number> = {
   existing_ncc_id: 5,
   existing_ncc_name: 6,
   existing_network_policy_id: 7,
+  existing_resource_group_name: 4,
   // Workspace Network (Azure SRA)
   create_workspace_vnet: 1,
   workspace_vnet: 2,
   existing_workspace_vnet: 3,
-  create_workspace_resource_group: 4,
-  existing_resource_group_name: 5,
   // Firewall Rules (Azure SRA)
   allowed_fqdns: 1,
-  hub_allowed_urls: 2,
   // Encryption (Azure SRA)
   cmk_enabled: 1,
   existing_cmk_ids: 2,
@@ -83,6 +81,7 @@ const FIELD_ORDER: Record<string, number> = {
   existing_vpc_name: 2,
   existing_subnet_name: 3,
   harden_network: 10,
+  control_plane_ips: 10.5,
   // GCP SRA: PSC fields
   use_psc: 11,
   google_pe_subnet: 12,
@@ -183,7 +182,6 @@ export function groupVariablesBySection(
     existing_resource_group_name: "Advanced: Network Configuration",
     cmk_enabled: "Advanced: Network Configuration",
     allowed_fqdns: "Advanced: Network Configuration",
-    hub_allowed_urls: "Advanced: Network Configuration",
     workspace_vnet: "Advanced: Network Configuration",
     existing_workspace_vnet: "Advanced: Network Configuration",
     existing_hub_vnet: "Advanced: Network Configuration",
@@ -207,6 +205,7 @@ export function groupVariablesBySection(
     existing_vpc_name: "Advanced: Network Configuration",
     existing_subnet_name: "Advanced: Network Configuration",
     harden_network: "Security & Compliance",
+    control_plane_ips: "Security & Compliance",
     // SRA: GCP PSC fields
     use_psc: "Advanced: Network Configuration",
     google_pe_subnet: "Advanced: Network Configuration",
@@ -265,11 +264,9 @@ export function groupVariablesBySection(
       create_workspace_vnet: "Workspace Network",
       workspace_vnet: "Workspace Network",
       existing_workspace_vnet: "Workspace Network",
-      create_workspace_resource_group: "Workspace Network",
-      existing_resource_group_name: "Workspace Network",
+      existing_resource_group_name: "Workspace",
 
       allowed_fqdns: "Firewall Rules",
-      hub_allowed_urls: "Firewall Rules",
 
       cmk_enabled: "Encryption",
       existing_cmk_ids: "Encryption",

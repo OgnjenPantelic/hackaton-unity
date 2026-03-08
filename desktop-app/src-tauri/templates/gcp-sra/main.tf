@@ -14,6 +14,7 @@ module "customer_managed_vpc" {
   existing_vpc_name                = var.existing_vpc_name
   existing_subnet_name             = var.existing_subnet_name
   harden_network                   = var.harden_network
+  control_plane_ips                = var.control_plane_ips
 
   # PSC
   use_psc                          = var.use_psc

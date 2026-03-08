@@ -1,4 +1,4 @@
-# Create virtual network peerings from this network to it's peers
+# Create virtual network peerings from this network to its peers
 resource "azurerm_virtual_network_peering" "peers" {
   for_each = var.virtual_network_peerings
 

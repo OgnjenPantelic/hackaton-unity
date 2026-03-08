@@ -16,9 +16,13 @@ Desktop app for deploying Databricks workspaces on AWS, Azure, and GCP using Ter
 - Azure identity for Databricks (no service principal needed with Azure CLI + Account Admin)
 - GCP service account creation with custom IAM role and impersonation setup
 - Cloud-specific permission validation before deployment
+- Auto-import and retry when Terraform hits "resource already exists" errors (Azure resource groups, Databricks network policies, Private Endpoint rules)
+- Resource name conflict detection for Azure — warns before deployment if resource groups already exist
+- Real-time resource timeline during deployment showing creation/destruction progress per resource
 - Rollback support (terraform destroy with resource cleanup)
 - Git integration with `terraform.tfvars.example` generation, GitHub OAuth device flow, repo creation, and push
 - AI Assistant with contextual help for each screen (GitHub Models free, OpenAI, Claude)
+- Settings menu on welcome screen (open deployments folder)
 - Single-instance enforcement (prevents running multiple copies)
 
 ## Prerequisites
@@ -59,8 +63,8 @@ The app includes an embedded AI assistant that provides contextual help for each
 | Provider | Cost | Notes |
 |----------|------|-------|
 | GitHub Models | Free | Recommended. Rate-limited. Requires GitHub PAT with `models:read` permission |
-| OpenAI | Paid | GPT-4o mini. Requires OpenAI API key |
-| Claude | Paid | Claude 3.5 Haiku. Requires Anthropic API key |
+| OpenAI | Paid | Requires OpenAI API key |
+| Claude | Paid | Requires Anthropic API key |
 
 ### Setup
 
@@ -109,6 +113,25 @@ The model list is fetched dynamically and cached for 24 hours.
 | macOS | `~/Library/Application Support/com.databricks.deployer/deployments/` |
 | Windows | `%APPDATA%\com.databricks.deployer\deployments\` |
 | Linux | `~/.local/share/com.databricks.deployer/deployments/` |
+
+## Auto-Import and Retry
+
+When `terraform apply` fails because cloud resources already exist (e.g. after a partial deployment), the app automatically:
+
+1. Parses the error output for "already exists" patterns
+2. Runs `terraform import` for each detected resource
+3. Retries `terraform apply` (up to 3 rounds)
+
+Supported resource types:
+- **Azure resources** — resource groups, VNets, NSGs, etc. (detected via Azure Resource Manager IDs)
+- **Databricks Private Endpoint rules** — matched by rule ID
+- **Databricks network connectivity** — NCC and network policies matched by name/ID
+
+This eliminates the need to manually run `terraform import` when re-deploying to the same environment.
+
+## Resource Name Conflict Detection
+
+For Azure deployments, the app checks whether resource group names already exist before starting `terraform apply`. If conflicts are found with resources **not** created by a previous Deployer run, a warning dialog appears with options to proceed or go back and rename.
 
 ## Build from Source
 
@@ -249,8 +272,9 @@ Each template creates Unity Catalog metastore/catalog, workspace, networking, an
 4. Add variable descriptions to `VARIABLE_DESCRIPTION_OVERRIDES` in `src/constants/templates.ts`
 5. Add credential/internal variables to `EXCLUDE_VARIABLES` (in `src/constants/templates.ts`) or `INTERNAL_VARIABLES`
 6. Add section mappings in `groupVariablesBySection()` in `src/utils/variables.ts`
-7. Increment `TEMPLATES_VERSION` in `src-tauri/src/commands/mod.rs`
-8. Rebuild
+7. If the template's Databricks provider references a workspace URL that doesn't exist during import, add a `workspace_url_override` variable (see `azure-simple` for an example) and handle it in `build_import_env()` in `terraform.rs`
+8. Increment `TEMPLATES_VERSION` in `src-tauri/src/commands/mod.rs`
+9. Rebuild
 
 ## Project Structure
 
@@ -330,16 +354,16 @@ src-tauri/
     lib.rs               # Tauri app setup, plugin registration, template extraction
     main.rs              # Application entry point
     commands/
-      mod.rs             # Shared types, helpers, constants, and template version
+      mod.rs             # Shared types, helpers, constants, template version, CLI_LOGIN_PROCESS mutex
       aws.rs             # AWS-specific commands
       azure.rs           # Azure-specific commands
       gcp.rs             # GCP-specific commands and SA creation
       databricks.rs      # Databricks authentication
-      deployment.rs      # Deployment configuration and tfvars generation
+      deployment.rs      # Deployment orchestration and tfvars generation
       templates.rs       # Template listing and variable parsing
       github.rs          # Git init, GitHub OAuth, repo creation, push
       assistant.rs       # AI assistant API integration (GitHub/OpenAI/Claude)
-    terraform.rs         # Terraform execution (init, plan, apply, destroy)
+    terraform.rs         # Terraform execution, auto-import, retry logic, output streaming
     dependencies.rs      # CLI detection, version checks, Terraform auto-install
     errors.rs            # Standardized error message helpers
   resources/

@@ -8,7 +8,6 @@ use crate::dependencies::{self, DependencyStatus};
 use crate::terraform::{self, DeploymentStatus, CURRENT_PROCESS, DEPLOYMENT_STATUS};
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader};
 use tauri::AppHandle;
 
 // ─── Helpers (deployment-local) ─────────────────────────────────────────────
@@ -219,16 +218,11 @@ fn build_env_vars(credentials: &CloudCredentials) -> HashMap<String, String> {
     env_vars
 }
 
-/// Read Databricks CLI config from `~/.databrickscfg` (default profile).
+/// Read Databricks CLI config (default profile).
+/// Respects `DATABRICKS_CONFIG_FILE` env var, falling back to `~/.databrickscfg`.
 /// Returns `(client_id, client_secret, account_id)`.
 fn read_databricks_cli_config() -> Option<(Option<String>, Option<String>, Option<String>)> {
-    let home = dirs::home_dir()?;
-    let config_path = home.join(".databrickscfg");
-
-    if !config_path.exists() {
-        return None;
-    }
-
+    let config_path = dependencies::get_databricks_config_path()?;
     let content = fs::read_to_string(&config_path).ok()?;
     let mut client_id = None;
     let mut client_secret = None;
@@ -576,65 +570,61 @@ pub async fn run_terraform_command(
     let process_clone = CURRENT_PROCESS.clone();
     let cmd = command.clone();
     let dir = deployment_dir.clone();
+    let is_apply = cmd == "apply";
 
     std::thread::spawn(move || {
+        let env_vars_for_retry = if is_apply { Some(env_vars.clone()) } else { None };
+
         match terraform::run_terraform(&cmd, &dir, env_vars) {
             Ok(mut child) => {
-                if let Ok(mut proc) = process_clone.lock() {
-                    *proc = Some(child.id());
-                }
-
-                let stdout = child.stdout.take();
-                let stderr = child.stderr.take();
-
-                let status_for_stdout = status_clone.clone();
-                let status_for_stderr = status_clone.clone();
-
-                let stdout_handle = stdout.map(|out| {
-                    std::thread::spawn(move || {
-                        let reader = BufReader::new(out);
-                        for line in reader.lines().flatten() {
-                            if let Ok(mut s) = status_for_stdout.lock() {
-                                s.output.push_str(&line);
-                                s.output.push('\n');
-                            }
-                        }
-                    })
-                });
-
-                let stderr_handle = stderr.map(|err| {
-                    std::thread::spawn(move || {
-                        let reader = BufReader::new(err);
-                        for line in reader.lines().flatten() {
-                            if let Ok(mut s) = status_for_stderr.lock() {
-                                s.output.push_str(&line);
-                                s.output.push('\n');
-                            }
-                        }
-                    })
-                });
-
-                if let Some(handle) = stdout_handle {
-                    let _ = handle.join();
-                }
-                if let Some(handle) = stderr_handle {
-                    let _ = handle.join();
-                }
-
-                match child.wait() {
-                    Ok(exit_status) => {
-                        if let Ok(mut s) = status_clone.lock() {
-                            s.running = false;
-                            s.success = Some(exit_status.success());
-                            s.can_rollback = terraform::check_state_exists(&dir);
-                        }
+                let set_pid = |pid: u32| {
+                    if let Ok(mut proc) = process_clone.lock() {
+                        *proc = Some(pid);
                     }
+                };
+
+                let success = match terraform::stream_and_wait(
+                    &mut child,
+                    status_clone.clone(),
+                    &set_pid,
+                ) {
+                    Ok(s) => s,
                     Err(e) => {
                         if let Ok(mut s) = status_clone.lock() {
                             s.running = false;
                             s.success = Some(false);
                             s.output.push_str(&format!("\nError: {}", e));
                         }
+                        if let Ok(mut proc) = process_clone.lock() {
+                            *proc = None;
+                        }
+                        return;
+                    }
+                };
+
+                if success {
+                    if let Ok(mut s) = status_clone.lock() {
+                        s.running = false;
+                        s.success = Some(true);
+                        s.can_rollback = terraform::check_state_exists(&dir);
+                    }
+                } else if let Some(retry_env) = env_vars_for_retry {
+                    let (ok, can_rollback) = terraform::import_and_retry_apply(
+                        &dir,
+                        &retry_env,
+                        status_clone.clone(),
+                        process_clone.clone(),
+                    );
+                    if let Ok(mut s) = status_clone.lock() {
+                        s.running = false;
+                        s.success = Some(ok);
+                        s.can_rollback = can_rollback;
+                    }
+                } else {
+                    if let Ok(mut s) = status_clone.lock() {
+                        s.running = false;
+                        s.success = Some(false);
+                        s.can_rollback = terraform::check_state_exists(&dir);
                     }
                 }
 
@@ -1176,5 +1166,89 @@ mod tests {
         let result = open_folder(temp.path().to_string_lossy().to_string());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not an existing directory"));
+    }
+
+    // ── read_databricks_cli_config parsing ──────────────────────────────
+
+    #[test]
+    fn read_cli_config_parses_default_section() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join(".databrickscfg");
+        std::fs::write(
+            &config_path,
+            "[DEFAULT]\nclient_id = cid-123\nclient_secret = csec-456\naccount_id = acc-789\n",
+        )
+        .unwrap();
+
+        // Override HOME to point at temp dir so the function finds the file
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", dir.path());
+
+        let result = read_databricks_cli_config();
+
+        // Restore HOME
+        if let Some(h) = original_home {
+            std::env::set_var("HOME", h);
+        }
+
+        assert!(result.is_some());
+        let (cid, csec, acc) = result.unwrap();
+        assert_eq!(cid, Some("cid-123".to_string()));
+        assert_eq!(csec, Some("csec-456".to_string()));
+        assert_eq!(acc, Some("acc-789".to_string()));
+    }
+
+    #[test]
+    fn read_cli_config_ignores_non_default_sections() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join(".databrickscfg");
+        std::fs::write(
+            &config_path,
+            "[my-profile]\nclient_id = cid\nclient_secret = csec\naccount_id = acc\n",
+        )
+        .unwrap();
+
+        let original_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", dir.path());
+
+        let result = read_databricks_cli_config();
+
+        if let Some(h) = original_home {
+            std::env::set_var("HOME", h);
+        }
+
+        assert!(result.is_none());
+    }
+
+    // ── build_env_vars: Azure auth type combinations ────────────────────
+
+    #[test]
+    fn build_env_vars_azure_does_not_set_databricks_config_profile() {
+        let creds = CloudCredentials {
+            cloud: Some("azure".to_string()),
+            azure_tenant_id: Some("tid".to_string()),
+            databricks_client_id: Some("sp-id".to_string()),
+            databricks_client_secret: Some("sp-sec".to_string()),
+            databricks_auth_type: Some("credentials".to_string()),
+            ..Default::default()
+        };
+        let env = build_env_vars(&creds);
+        // Azure cloud should not set DATABRICKS_CONFIG_PROFILE or DATABRICKS_CLIENT_*
+        // (those are handled via Terraform variables, not env vars)
+        assert!(!env.contains_key("DATABRICKS_CONFIG_PROFILE"));
+        assert!(!env.contains_key("DATABRICKS_CLIENT_ID"));
+    }
+
+    #[test]
+    fn build_env_vars_aws_session_token_optional() {
+        let creds = CloudCredentials {
+            aws_access_key_id: Some("AKID".to_string()),
+            aws_secret_access_key: Some("SECRET".to_string()),
+            cloud: Some("aws".to_string()),
+            ..Default::default()
+        };
+        let env = build_env_vars(&creds);
+        assert_eq!(env.get("AWS_ACCESS_KEY_ID"), Some(&"AKID".to_string()));
+        assert!(!env.contains_key("AWS_SESSION_TOKEN"));
     }
 }

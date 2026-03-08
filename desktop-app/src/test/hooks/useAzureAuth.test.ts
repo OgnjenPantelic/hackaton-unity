@@ -310,4 +310,111 @@ describe("useAzureAuth", () => {
       expect(result.current.permissionCheck).toBeNull();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // loadVnets
+  // ---------------------------------------------------------------------------
+  describe("loadVnets", () => {
+    it("loads VNets via CLI mode on success", async () => {
+      const vnets = [
+        { name: "vnet-1", resource_group: "rg-1", cidr: "10.0.0.0/16" },
+      ];
+      mockInvoke.mockResolvedValueOnce(vnets);
+
+      const { result } = renderHook(() => useAzureAuth());
+
+      await act(async () => {
+        await result.current.loadVnets();
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith("get_azure_vnets");
+      expect(result.current.vnets).toEqual(vnets);
+    });
+
+    it("loads VNets via service principal mode when credentials provided", async () => {
+      const vnets = [
+        { name: "vnet-sp", resource_group: "rg-sp", cidr: "10.1.0.0/16" },
+      ];
+      mockInvoke.mockResolvedValueOnce(vnets);
+
+      const { result } = renderHook(() => useAzureAuth());
+
+      // Switch to SP mode
+      act(() => {
+        result.current.setAuthMode("service_principal");
+      });
+
+      const spCreds: CloudCredentials = {
+        azure_client_id: "cid",
+        azure_client_secret: "csec",
+      };
+
+      await act(async () => {
+        await result.current.loadVnets(spCreds);
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith("get_azure_vnets_sp", { credentials: spCreds });
+      expect(result.current.vnets).toEqual(vnets);
+    });
+
+    it("sets vnets to empty array on error", async () => {
+      mockInvoke.mockRejectedValueOnce(new Error("fail"));
+
+      const { result } = renderHook(() => useAzureAuth());
+
+      await act(async () => {
+        await result.current.loadVnets();
+      });
+
+      expect(result.current.vnets).toEqual([]);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // cancelLogin
+  // ---------------------------------------------------------------------------
+  describe("cancelLogin", () => {
+    it("invokes cancel_cli_login and resets loginInProgress", async () => {
+      mockInvoke.mockResolvedValueOnce(undefined);
+
+      const { result } = renderHook(() => useAzureAuth());
+
+      await act(async () => {
+        await result.current.cancelLogin();
+      });
+
+      expect(mockInvoke).toHaveBeenCalledWith("cancel_cli_login");
+      expect(result.current.loginInProgress).toBe(false);
+    });
+
+    it("resets loginInProgress even on error", async () => {
+      mockInvoke.mockRejectedValueOnce(new Error("cancel failed"));
+
+      const { result } = renderHook(() => useAzureAuth());
+
+      await act(async () => {
+        await result.current.cancelLogin();
+      });
+
+      expect(result.current.loginInProgress).toBe(false);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // handleAzureLogin: LOGIN_CANCELLED
+  // ---------------------------------------------------------------------------
+  describe("handleAzureLogin - LOGIN_CANCELLED", () => {
+    it("does not set error when login is cancelled", async () => {
+      mockInvoke.mockRejectedValueOnce("LOGIN_CANCELLED");
+
+      const { result } = renderHook(() => useAzureAuth());
+
+      await act(async () => {
+        await result.current.handleAzureLogin();
+      });
+
+      expect(result.current.error).toBeNull();
+      expect(result.current.loading).toBe(false);
+    });
+  });
 });

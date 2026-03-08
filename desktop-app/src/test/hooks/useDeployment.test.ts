@@ -1,6 +1,6 @@
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
-import { useDeployment } from "../../hooks/useDeployment";
+import { useDeployment, reconstructObjects } from "../../hooks/useDeployment";
 import { DeploymentStatus, Template, CloudCredentials, UnityCatalogConfig } from "../../types";
 
 const mockInvoke = vi.mocked(invoke);
@@ -646,5 +646,106 @@ describe("useDeployment", () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
       expect(mockInvoke.mock.calls.length).toBe(callsBeforeCleanup);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reconstructObjects (exported utility)
+// ---------------------------------------------------------------------------
+describe("reconstructObjects", () => {
+  it("passes through plain values unchanged", () => {
+    const result = reconstructObjects({
+      region: "eastus",
+      workspace_name: "test-ws",
+    });
+
+    expect(result.region).toBe("eastus");
+    expect(result.workspace_name).toBe("test-ws");
+  });
+
+  it("reconstructs Azure SRA workspace_vnet from decomposed fields", () => {
+    const result = reconstructObjects({
+      workspace_vnet__cidr: "10.0.0.0/20",
+      workspace_vnet__new_bits: "2",
+      other_field: "value",
+    });
+
+    expect(result.workspace_vnet).toEqual({
+      cidr: "10.0.0.0/20",
+      new_bits: "2",
+    });
+    expect(result.other_field).toBe("value");
+    expect(result).not.toHaveProperty("workspace_vnet__cidr");
+    expect(result).not.toHaveProperty("workspace_vnet__new_bits");
+  });
+
+  it("reconstructs existing_hub_vnet from decomposed fields", () => {
+    const result = reconstructObjects({
+      "existing_hub_vnet__route_table_id": "/subs/rt-1",
+      "existing_hub_vnet__vnet_id": "/subs/vnet-1",
+    });
+
+    expect(result.existing_hub_vnet).toEqual({
+      route_table_id: "/subs/rt-1",
+      vnet_id: "/subs/vnet-1",
+    });
+  });
+
+  it("reconstructs nested object paths (network_configuration inside existing_workspace_vnet)", () => {
+    const result = reconstructObjects({
+      "existing_workspace_vnet__nc__vnet_id": "/subs/vnet-1",
+      "existing_workspace_vnet__nc__private_subnet": "/subs/private-1",
+    });
+
+    expect(result.existing_workspace_vnet).toBeDefined();
+    expect(result.existing_workspace_vnet.network_configuration).toBeDefined();
+    expect(result.existing_workspace_vnet.network_configuration.virtual_network_id).toBe("/subs/vnet-1");
+    expect(result.existing_workspace_vnet.network_configuration.private_subnet_id).toBe("/subs/private-1");
+  });
+
+  it("reconstructs list fields from decomposed sub-fields", () => {
+    const result = reconstructObjects({
+      private_subnets_cidr_1: "10.0.0.0/18",
+      private_subnets_cidr_2: "10.0.64.0/18",
+    });
+
+    expect(result.private_subnets_cidr).toEqual(["10.0.0.0/18", "10.0.64.0/18"]);
+    expect(result).not.toHaveProperty("private_subnets_cidr_1");
+    expect(result).not.toHaveProperty("private_subnets_cidr_2");
+  });
+
+  it("skips object reconstruction when all sub-fields are empty", () => {
+    const result = reconstructObjects({
+      workspace_vnet__cidr: "",
+      workspace_vnet__new_bits: "",
+      region: "eastus",
+    });
+
+    expect(result).not.toHaveProperty("workspace_vnet");
+    expect(result.region).toBe("eastus");
+  });
+
+  it("skips list reconstruction when all sub-fields are empty", () => {
+    const result = reconstructObjects({
+      private_subnets_cidr_1: "",
+      private_subnets_cidr_2: "",
+    });
+
+    expect(result).not.toHaveProperty("private_subnets_cidr");
+  });
+
+  it("handles mixed decomposed and plain values", () => {
+    const result = reconstructObjects({
+      workspace_vnet__cidr: "10.0.0.0/20",
+      private_subnets_cidr_1: "10.0.0.0/18",
+      private_subnets_cidr_2: "10.0.64.0/18",
+      region: "westus",
+      workspace_name: "my-ws",
+    });
+
+    expect(result.workspace_vnet).toEqual({ cidr: "10.0.0.0/20" });
+    expect(result.private_subnets_cidr).toEqual(["10.0.0.0/18", "10.0.64.0/18"]);
+    expect(result.region).toBe("westus");
+    expect(result.workspace_name).toBe("my-ws");
   });
 });

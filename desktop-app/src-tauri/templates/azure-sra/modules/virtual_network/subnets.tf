@@ -23,17 +23,17 @@ resource "azurerm_subnet" "workspace_subnets" {
 }
 
 resource "azurerm_subnet_network_security_group_association" "workspace_subnets" {
-  for_each = azurerm_subnet.workspace_subnets
+  for_each = local.workspace_subnets
 
-  subnet_id                 = each.value.id
+  subnet_id                 = azurerm_subnet.workspace_subnets[each.key].id
   network_security_group_id = azurerm_network_security_group.this.id
 }
 
 # Associate the route table with the host subnet
 resource "azurerm_subnet_route_table_association" "workspace_subnets" {
-  for_each = azurerm_subnet.workspace_subnets
+  for_each = local.workspace_subnets
 
-  subnet_id      = each.value.id
+  subnet_id      = azurerm_subnet.workspace_subnets[each.key].id
   route_table_id = var.route_table_id
 }
 

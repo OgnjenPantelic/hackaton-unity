@@ -11,6 +11,7 @@ export interface UseAzureAuthReturn {
   vnets: AzureVnet[];
   authMode: "cli" | "service_principal";
   loading: boolean;
+  loginInProgress: boolean;
   error: string | null;
   permissionCheck: CloudPermissionCheck | null;
   checkingPermissions: boolean;
@@ -25,6 +26,7 @@ export interface UseAzureAuthReturn {
   loadResourceGroups: (subscriptionId: string, credentials?: CloudCredentials) => Promise<void>;
   loadVnets: (credentials?: CloudCredentials) => Promise<void>;
   handleAzureLogin: () => Promise<void>;
+  cancelLogin: () => Promise<void>;
   handleSubscriptionChange: (
     subscriptionId: string,
     subscriptions: AzureSubscription[],
@@ -42,6 +44,7 @@ export function useAzureAuth(): UseAzureAuthReturn {
   const [vnets, setVnets] = useState<AzureVnet[]>([]);
   const [authMode, setAuthMode] = useState<"cli" | "service_principal">("cli");
   const [loading, setLoading] = useState(false);
+  const [loginInProgress, setLoginInProgress] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [permissionCheck, setPermissionCheck] = useState<CloudPermissionCheck | null>(null);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
@@ -115,6 +118,7 @@ export function useAzureAuth(): UseAzureAuthReturn {
 
   const handleAzureLogin = useCallback(async () => {
     setLoading(true);
+    setLoginInProgress(true);
     setError(null);
     try {
       await invoke("azure_login");
@@ -123,11 +127,24 @@ export function useAzureAuth(): UseAzureAuthReturn {
         await loadSubscriptions();
       }
     } catch (e: unknown) {
-      setError(String(e));
+      const msg = String(e);
+      if (msg !== "LOGIN_CANCELLED") {
+        setError(msg);
+      }
     } finally {
+      setLoginInProgress(false);
       setLoading(false);
     }
   }, [loadAccount, loadSubscriptions]);
+
+  const cancelLogin = useCallback(async () => {
+    try {
+      await invoke("cancel_cli_login");
+    } catch {
+      // Best-effort cancellation
+    }
+    setLoginInProgress(false);
+  }, []);
 
   const handleSubscriptionChange = useCallback(
     (
@@ -182,6 +199,7 @@ export function useAzureAuth(): UseAzureAuthReturn {
     vnets,
     authMode,
     loading,
+    loginInProgress,
     error,
     permissionCheck,
     checkingPermissions,
@@ -194,6 +212,7 @@ export function useAzureAuth(): UseAzureAuthReturn {
     loadResourceGroups,
     loadVnets,
     handleAzureLogin,
+    cancelLogin,
     handleSubscriptionChange,
     checkPermissions,
     clearError,

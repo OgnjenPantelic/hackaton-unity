@@ -50,6 +50,7 @@ terraform apply -var-file="terraform.tfvars"
 | `uc_storage_name` | Unity Catalog storage name |
 | `databricks_auth_type` | Auth type (profile, service-principal, or azure-cli) |
 | `tags` | Resource tags |
+| `workspace_url_override` | Internal: placeholder URL for auto-import (auto-managed, do not set manually) |
 
 ## Security Notes
 

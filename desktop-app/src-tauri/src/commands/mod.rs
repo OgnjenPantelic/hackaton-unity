@@ -31,7 +31,61 @@ pub use templates::*;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager};
+
+lazy_static::lazy_static! {
+    /// PID of the currently running CLI login process (shared by Azure and AWS SSO login).
+    pub static ref CLI_LOGIN_PROCESS: Arc<Mutex<Option<u32>>> = Arc::new(Mutex::new(None));
+}
+
+/// Acquire a mutex lock, recovering from poisoning with a warning.
+///
+/// A poisoned lock means another thread panicked while holding it.
+/// We log a debug warning and recover the inner value so the app
+/// can continue rather than silently swallowing the error.
+pub(crate) fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poisoned| {
+        debug_log!("[WARN] Mutex poisoned, recovering: {}", poisoned);
+        poisoned.into_inner()
+    })
+}
+
+/// Cancel an in-progress CLI login (Azure or AWS SSO).
+///
+/// Atomically takes the stored PID to avoid TOCTOU races, then sends
+/// SIGTERM before SIGKILL on Unix to allow graceful cleanup.
+#[tauri::command]
+pub fn cancel_cli_login() -> Result<(), String> {
+    let proc_id = lock_or_recover(&CLI_LOGIN_PROCESS).take();
+
+    if let Some(pid) = proc_id {
+        let pid_str = pid.to_string();
+
+        #[cfg(unix)]
+        {
+            use std::process::Command;
+            use std::thread;
+            use std::time::Duration;
+
+            let _ = Command::new("pkill").args(["-TERM", "-P", &pid_str]).output();
+            let _ = Command::new("kill").args(["-TERM", &pid_str]).output();
+            thread::sleep(Duration::from_millis(200));
+            let _ = Command::new("pkill").args(["-9", "-P", &pid_str]).output();
+            let _ = Command::new("kill").args(["-9", &pid_str]).output();
+        }
+
+        #[cfg(windows)]
+        {
+            use std::process::Command;
+            let _ = Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid_str])
+                .output();
+        }
+    }
+
+    Ok(())
+}
 
 /// Debug logging macro — only emits output in debug builds.
 macro_rules! debug_log {
@@ -123,12 +177,15 @@ pub struct UCPermissionCheck {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 /// Increment when embedded templates change to trigger a refresh.
-pub(crate) const TEMPLATES_VERSION: &str = "2.65.0";
+pub(crate) const TEMPLATES_VERSION: &str = "2.69.0";
 
 /// Variables that are automatically set by the app and hidden from the UI form.
 pub(crate) const INTERNAL_VARIABLES: &[&str] = &[
     "gcp_auth_method",
     "google_credentials_json",
+    "hub_workspace_url_override",
+    "spoke_workspace_url_override",
+    "workspace_url_override",
 ];
 
 // ─── Helper Functions ───────────────────────────────────────────────────────

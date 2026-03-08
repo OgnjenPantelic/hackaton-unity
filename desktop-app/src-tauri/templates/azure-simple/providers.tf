@@ -11,7 +11,7 @@ provider "azurerm" {
 # - "azure-cli" - Uses Azure CLI OAuth authentication
 # - "oauth-m2m" - Uses service principal credentials
 provider "databricks" {
-  host       = azurerm_databricks_workspace.this.workspace_url
+  host       = var.workspace_url_override != "" ? var.workspace_url_override : azurerm_databricks_workspace.this.workspace_url
   auth_type  = var.databricks_auth_type
   # For oauth-m2m only
   client_id     = var.databricks_auth_type == "oauth-m2m" ? var.databricks_client_id : null

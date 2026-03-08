@@ -13,7 +13,7 @@ export const ASSISTANT_PROVIDERS = {
   },
   "openai": {
     name: "OpenAI",
-    description: "GPT-4o mini (paid)",
+    description: "OpenAI (paid)",
     apiKeyUrl: "https://platform.openai.com/api-keys",
     apiKeyPlaceholder: "sk-proj-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     instructions: "Create a new API key from your OpenAI dashboard",
@@ -21,7 +21,7 @@ export const ASSISTANT_PROVIDERS = {
   },
   "claude": {
     name: "Claude",
-    description: "Claude 3.5 Haiku (paid)",
+    description: "Anthropic Claude (paid)",
     apiKeyUrl: "https://console.anthropic.com/settings/keys",
     apiKeyPlaceholder: "sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     instructions: "Create a new API key from the Anthropic console",
@@ -33,14 +33,14 @@ export const SCREEN_CONTEXT: Record<string, string> = {
   "welcome": "The user is on the welcome screen. They haven't started any configuration yet. They can click 'Get Started' to begin the deployment wizard.",
   "cloud-selection": "The user is choosing a cloud provider: AWS, Azure, or GCP. Each card shows supported features. They click a cloud to proceed.",
   "dependencies": "The user is on the dependencies screen where the app checks if Terraform CLI and Databricks CLI are installed. Terraform can be auto-installed. Databricks CLI is optional but recommended.",
-  "aws-credentials": "The user is configuring AWS credentials. Two modes: 'AWS CLI Profile' (recommended, uses ~/.aws/credentials or ~/.aws/config, supports SSO) or 'Access Keys' (manual key entry). The app verifies identity and checks IAM permissions.",
-  "azure-credentials": "The user is configuring Azure credentials. Two modes: 'Azure CLI' (recommended, uses 'az login') or 'Service Principal' (Tenant ID, Subscription ID, Client ID, Client Secret). After auth, they select a subscription and the app checks role assignments.",
+  "aws-credentials": "The user is configuring AWS credentials. Two modes: 'AWS CLI Profile' (recommended, uses ~/.aws/credentials or ~/.aws/config, supports SSO with non-blocking browser login and Cancel button) or 'Access Keys' (manual key entry). The app verifies identity and checks IAM permissions.",
+  "azure-credentials": "The user is configuring Azure credentials. Two modes: 'Azure CLI' (recommended, uses 'az login' with non-blocking browser login, 5-minute timeout, and Cancel button; once logged in the button says 'Switch Account') or 'Service Principal' (Tenant ID, Subscription ID, Client ID, Client Secret). After auth, they select a subscription and the app checks role assignments.",
   "gcp-credentials": "The user is configuring GCP credentials. Two modes: 'Application Default Credentials' (recommended, uses gcloud + service account impersonation) or 'Service Account Key' (paste JSON key). The service account needs Owner role on the project.",
   "databricks-credentials": "The user is entering Databricks account credentials. For GCP/Azure-identity: just the Account ID. For AWS/Azure-SP: either a CLI profile from ~/.databrickscfg (service principal only) or Client ID + Client Secret. The Account ID is a UUID from the Databricks Account Console.",
   "template-selection": "The user is selecting a Terraform deployment template. There are two templates per cloud: a Standard template (aws-simple, azure-simple, gcp-simple) for straightforward deployments, and an SRA (Security Reference Architecture) template (aws-sra, azure-sra, gcp-sra) for enterprise/regulated environments with PrivateLink/PE/PSC, customer-managed encryption keys, and compliance controls. Each card shows features.",
-  "configuration": "The user is filling in Terraform template variables. Standard templates have: workspace name, region, networking (VPC/VNet/subnet CIDRs), tags, and optional existing VPC/VNet settings. SRA templates have additional options: PrivateLink/PE/PSC configuration, CMK/CMEK encryption settings, compliance profiles, Security Analysis Tool (SAT), firewall rules (Azure), hub-spoke architecture (Azure), network hardening (GCP), and IP access lists (GCP). Values have validation rules.",
+  "configuration": "The user is filling in Terraform template variables. Standard templates have: workspace name, region, networking (VPC/VNet/subnet CIDRs), tags, and optional existing VPC/VNet settings. SRA templates have additional options: PrivateLink/PE/PSC configuration, CMK/CMEK encryption settings, compliance profiles, Security Analysis Tool (SAT), firewall rules (Azure), hub-spoke architecture with Databricks account resources like NCC and network policy (Azure), network hardening (GCP), and IP access lists (GCP). For Azure SRA, the 'Create Hub & Account Resources' toggle controls whether hub infrastructure and Databricks account-level resources (NCC, network policy, metastore) are created or must be provided as existing IDs. SAT configuration, Allowed FQDNs, and hub naming fields are only visible when hub creation is enabled (SAT is a hub-only feature). Values have validation rules.",
   "unity-catalog-config": "The user is configuring Unity Catalog (optional). They can enable it with a catalog name and storage location (S3 bucket/Azure Storage/GCS bucket). The app auto-detects if a metastore exists in the region. Storage names must be globally unique.",
-  "deployment": "The user is on the deployment screen. Terraform runs in stages: init → plan → review → apply. They can see real-time output, review the plan before applying, cancel a running deployment, or rollback after failure. Deployment typically takes 5-15 minutes.",
+  "deployment": "The user is on the deployment screen. Terraform runs in stages: init → plan → review → apply. A resource progress timeline shows each resource's status (pending/creating/created) with a progress bar. If apply fails with 'already exists' errors, the app auto-imports conflicting resources and retries. They can cancel a running deployment or rollback after failure. Standard template deployments typically take 10-15 minutes. SRA template deployments typically take 20-40 minutes due to additional resources (PrivateLink, CMK, hub infrastructure, etc.).",
 };
 
 export const ASSISTANT_SAMPLE_QUESTIONS: Record<string, string[]> = {
@@ -87,6 +87,7 @@ export const ASSISTANT_SAMPLE_QUESTIONS: Record<string, string[]> = {
     "How do I configure VPC settings?",
     "Should I enable CMK encryption?",
     "What is the Compliance Security Profile?",
+    "What are the Databricks Account Resources I need when not creating a hub?",
   ],
   "unity-catalog-config": [
     "What is Unity Catalog?",

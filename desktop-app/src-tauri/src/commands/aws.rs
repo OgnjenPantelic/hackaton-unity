@@ -141,10 +141,13 @@ pub fn get_aws_identity(profile: String) -> Result<AwsIdentity, String> {
     })
 }
 
-/// Trigger AWS SSO login for a profile.
+/// Trigger AWS SSO login for a profile. Supports cancellation via `cancel_cli_login`.
 #[tauri::command]
 pub async fn aws_sso_login(profile: String) -> Result<String, String> {
+    use super::CLI_LOGIN_PROCESS;
     use std::process::Command;
+    use std::time::{Duration, Instant};
+    use std::thread;
 
     if !profile.is_empty() && !validate_aws_profile_name(&profile) {
         return Err("Invalid AWS profile name".to_string());
@@ -160,16 +163,53 @@ pub async fn aws_sso_login(profile: String) -> Result<String, String> {
         cmd.args(["--profile", &profile]);
     }
 
-    let output = cmd
-        .output()
+    let mut child = cmd
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| format!("Failed to run AWS CLI: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("SSO login failed: {}", stderr.trim()));
+    if let Ok(mut proc) = CLI_LOGIN_PROCESS.lock() {
+        *proc = Some(child.id());
     }
 
-    Ok("SSO login initiated. Complete authentication in your browser.".to_string())
+    let timeout = Duration::from_secs(300);
+    let start = Instant::now();
+
+    let result = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let output = child.wait_with_output().map_err(|e| format!("Failed to read output: {}", e))?;
+                if !status.success() {
+                    let was_cancelled = super::lock_or_recover(&CLI_LOGIN_PROCESS).is_none();
+                    if was_cancelled {
+                        break Err("LOGIN_CANCELLED".to_string());
+                    }
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let stderr_str = stderr.trim();
+                    if stderr_str.is_empty() || stderr_str.contains("Killed") || stderr_str.contains("terminated") {
+                        break Err("LOGIN_CANCELLED".to_string());
+                    }
+                    break Err(format!("SSO login failed: {}", stderr_str));
+                }
+                break Ok("SSO login completed successfully.".to_string());
+            }
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    break Err("SSO login timed out after 5 minutes. Please try again.".to_string());
+                }
+                thread::sleep(Duration::from_millis(500));
+            }
+            Err(e) => break Err(format!("Error waiting for AWS CLI: {}", e)),
+        }
+    };
+
+    if let Ok(mut proc) = CLI_LOGIN_PROCESS.lock() {
+        *proc = None;
+    }
+
+    result
 }
 
 /// Check AWS IAM permissions using the IAM Policy Simulator.
