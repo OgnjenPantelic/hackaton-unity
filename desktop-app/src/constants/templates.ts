@@ -54,7 +54,7 @@ export const VARIABLE_DISPLAY_NAMES: Record<string, string> = {
   existing_resource_group_name: "Resource Group",
   existing_ncc_id: "Existing Network Connectivity Config (NCC) ID",
   existing_ncc_name: "Existing NCC Name",
-  existing_network_policy_id: "Existing Network Policy ID",
+  existing_network_policy_id: "Existing Network Policy Name",
   existing_cmk_ids: "Existing CMK IDs",
   databricks_metastore_id: "Metastore ID",
   workspace_security_compliance: "Security Compliance Settings",
@@ -166,6 +166,7 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   hub_resource_suffix: "Naming suffix for hub resources. Required when creating hub infrastructure.",
   create_hub: "Create hub infrastructure (firewall, VNet, CMK) and Databricks account resources (NCC, network policy, metastore). Disable if these already exist — you'll need to provide their IDs.",
   create_workspace_vnet: "Create a new SRA-managed workspace VNet. Disable to use an existing VNet.",
+  workspace_vnet: "Spoke network configuration for the workspace VNet.",
   create_workspace_resource_group: "Create a new resource group for the workspace. Disable to use an existing one.",
   existing_resource_group_name: "Azure resource group to deploy the workspace into. Select an existing one or enter a new name.",
   cmk_enabled: "Encrypt managed disks and services with customer-managed keys. Enabled by default.",
@@ -174,10 +175,12 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   existing_cmk_ids: "Required because Customer-Managed Keys (CMK) is enabled. To skip providing these, disable the CMK toggle in the Encryption section.",
   allowed_fqdns: "Domains workspaces can reach from classic compute (via firewall) and serverless compute (via network policy). No internet access is allowed by default.",
   existing_ncc_id: "Required when using existing hub. ID of an existing Network Connectivity Config (NCC). The NCC controls serverless private endpoints. Find it in Account Console → Settings → Network connectivity configurations.",
-  existing_ncc_name: "Display name of the NCC. Required for private endpoint setup. Find it alongside the NCC ID in Account Console → Settings → Network connectivity configurations.",
-  existing_network_policy_id: "Required when using existing hub. ID of an existing network policy that controls serverless egress rules. Find it in Account Console → Settings → Network policies.",
+  existing_ncc_name: "Name of the existing NCC. Used to label private endpoint approvals. Find it in Account Console → Settings → Network connectivity configurations (e.g. ncc-eastus-hub1abc).",
+  existing_network_policy_id: "Name of the existing network policy that controls serverless egress rules. Find it in Account Console → Settings → Network policies (e.g. np-hub1abc-restrictive).",
   databricks_metastore_id: "ID of an existing Unity Catalog metastore. Must be created before deploying a workspace. Find it in Account Console → Data → Metastores.",
-  sat_configuration: "Security Analysis Tool configuration (enable, schema, catalog, serverless).",
+  workspace_security_compliance: "Enhanced security compliance configuration for the workspace.",
+  sat_configuration: "Security Analysis Tool configuration (enable, schema, catalog, serverless). See https://github.com/databricks-industry-solutions/security-analysis-tool",
+  sat_service_principal: "Service principal for running SAT. Leave empty to create one automatically.",
 
   // --- SRA: AWS ---
   resource_prefix: "Name for your workspace. Also used as prefix for all resource names (1-26 chars, lowercase letters, numbers, hyphens, and dots).",
@@ -229,6 +232,12 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   workspace_pe_ip_name: "Optional. Private IP address name for the workspace PSC endpoint.",
 };
 
+export const PLACEHOLDER_OVERRIDES: Record<string, string> = {
+  existing_ncc_id: "5a29629b-8098-43e8-87c8-26ec05211924",
+  existing_ncc_name: "ncc-eastus-hub1abc",
+  existing_network_policy_id: "np-hub1abc-restrictive",
+};
+
 export const EXCLUDE_VARIABLES = [
   "databricks_account_id",
   "databricks_client_id",
@@ -265,6 +274,8 @@ export const EXCLUDE_VARIABLES = [
   "sat_force_destroy",
   "catalog_force_destroy",
   "hub_allowed_urls",
+  // SRA: AWS - hidden from form (requires Databricks rep pre-enablement)
+  "deployment_name",
   // SRA: AWS - region-specific config maps with sensible defaults
   "artifact_storage_bucket",
   "shared_datasets_bucket",
@@ -443,6 +454,13 @@ export const CONDITIONAL_FIELD_VISIBILITY: {
     defaultChecked: true,
     showWhenChecked: ["hub_vnet_cidr", "hub_resource_suffix", "allowed_fqdns", "sat_configuration", "sat_service_principal"],
     showWhenUnchecked: ["existing_hub_vnet", "existing_cmk_ids", "existing_ncc_id", "existing_ncc_name", "existing_network_policy_id"],
+  },
+  // Azure SRA: CMK enabled shows existing CMK IDs (when hub is not being created)
+  {
+    toggle: "cmk_enabled",
+    defaultChecked: true,
+    showWhenChecked: ["existing_cmk_ids"],
+    showWhenUnchecked: [],
   },
   // Azure SRA: workspace VNet creation vs bring-your-own
   {

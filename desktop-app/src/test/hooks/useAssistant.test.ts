@@ -173,6 +173,7 @@ describe("useAssistant", () => {
 
       expect(mockInvoke).toHaveBeenCalledWith("assistant_chat", {
         message: "What is Databricks?",
+        screen: "welcome",
         screenContext: expect.stringContaining("welcome"),
         stateMetadata: "Cloud provider: aws",
         history: [],
@@ -225,6 +226,7 @@ describe("useAssistant", () => {
 
       expect(mockInvoke).toHaveBeenCalledWith("assistant_chat", {
         message: "Second question",
+        screen: "welcome",
         screenContext: expect.any(String),
         stateMetadata: "",
         history: [

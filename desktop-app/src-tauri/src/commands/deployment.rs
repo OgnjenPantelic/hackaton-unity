@@ -264,20 +264,24 @@ fn read_databricks_cli_config() -> Option<(Option<String>, Option<String>, Optio
 
 /// Check which CLI dependencies are installed.
 #[tauri::command]
-pub fn check_dependencies() -> HashMap<String, DependencyStatus> {
-    let mut deps = HashMap::new();
+pub async fn check_dependencies() -> HashMap<String, DependencyStatus> {
+    tokio::task::spawn_blocking(|| {
+        let mut deps = HashMap::new();
 
-    deps.insert("terraform".to_string(), dependencies::check_terraform());
-    deps.insert("git".to_string(), dependencies::check_git());
-    deps.insert("aws".to_string(), dependencies::check_aws_cli());
-    deps.insert("azure".to_string(), dependencies::check_azure_cli());
-    deps.insert("gcloud".to_string(), dependencies::check_gcloud_cli());
-    deps.insert(
-        "databricks".to_string(),
-        dependencies::check_databricks_cli(),
-    );
+        deps.insert("terraform".to_string(), dependencies::check_terraform());
+        deps.insert("git".to_string(), dependencies::check_git());
+        deps.insert("aws".to_string(), dependencies::check_aws_cli());
+        deps.insert("azure".to_string(), dependencies::check_azure_cli());
+        deps.insert("gcloud".to_string(), dependencies::check_gcloud_cli());
+        deps.insert(
+            "databricks".to_string(),
+            dependencies::check_databricks_cli(),
+        );
 
-    deps
+        deps
+    })
+    .await
+    .unwrap_or_default()
 }
 
 /// Download and install Terraform.

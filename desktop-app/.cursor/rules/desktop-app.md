@@ -76,7 +76,7 @@ WelcomeScreen → CloudSelectionScreen → DependenciesScreen
 |------|---------|
 | `crypto.rs` | AES-256-GCM encryption for secrets at rest (`enc:v1:` format) |
 | `dependencies.rs` | CLI detection and version checks for Terraform, Git, AWS, Azure, gcloud, Databricks |
-| `terraform.rs` | `parse_variables_tf()`, `generate_tfvars()`, `run_terraform()`, `check_state_exists()`, `stream_and_wait()`, `parse_importable_errors()`, `run_terraform_import()`, `import_and_retry_apply()`, `resolve_ncc_id()`, `build_import_env()`, `run_import_batch()`, `DEPLOYMENT_STATUS` / `CURRENT_PROCESS` globals |
+| `terraform.rs` | `parse_variables_tf()`, `generate_tfvars()`, `run_terraform()`, `check_state_exists()`, `stream_and_wait()`, `parse_importable_errors()`, `run_terraform_import()`, `import_and_retry_apply()`, `resolve_ncc_id()`, `resolve_azure_role_assignment_id()`, `build_import_env()`, `run_import_batch()`, `DEPLOYMENT_STATUS` / `CURRENT_PROCESS` globals |
 | `errors.rs` | `cli_not_found()`, `auth_expired()`, `not_logged_in()` helpers |
 | `commands/mod.rs` | `cancel_cli_login`; Module wiring, re-exports, `TEMPLATES_VERSION`, `INTERNAL_VARIABLES`, `CLI_LOGIN_PROCESS` (shared login PID), shared types (`Template`, `CloudCredentials`, `CloudPermissionCheck`, `MetastoreInfo`, `UCPermissionCheck`), helpers (`sanitize_deployment_name`, `http_client`, `databricks_accounts_host`, `lock_or_recover`, etc.) |
 
@@ -114,7 +114,7 @@ Templates live in `src-tauri/templates/{cloud}-{type}/` and are bundled as Tauri
 | File | Exports |
 |------|---------|
 | `constants/cloud.ts` | `CLOUDS`, `CLOUD_DISPLAY_NAMES`, `AWS_REGIONS`, `AZURE_REGIONS`, `GCP_REGIONS` |
-| `constants/templates.ts` | `VARIABLE_DISPLAY_NAMES`, `VARIABLE_DESCRIPTION_OVERRIDES`, `EXCLUDE_VARIABLES`, `OBJECT_FIELD_DECOMPOSITION`, `LIST_FIELD_DECOMPOSITION`, `CONDITIONAL_FIELD_VISIBILITY`, `CONDITIONAL_SELECT_VISIBILITY`, `COMPLIANCE_STANDARDS`, `FQDN_GROUPS`, `FIELD_GROUPS` |
+| `constants/templates.ts` | `VARIABLE_DISPLAY_NAMES`, `VARIABLE_DESCRIPTION_OVERRIDES`, `PLACEHOLDER_OVERRIDES`, `EXCLUDE_VARIABLES`, `OBJECT_FIELD_DECOMPOSITION`, `LIST_FIELD_DECOMPOSITION`, `CONDITIONAL_FIELD_VISIBILITY`, `CONDITIONAL_SELECT_VISIBILITY`, `COMPLIANCE_STANDARDS`, `FQDN_GROUPS`, `FIELD_GROUPS` |
 | `constants/assistant.ts` | `ASSISTANT`, `ASSISTANT_PROVIDERS`, `SCREEN_CONTEXT`, `ASSISTANT_SAMPLE_QUESTIONS` |
 | `constants/ui.ts` | `POLLING`, `UI`, `DEFAULTS` |
 

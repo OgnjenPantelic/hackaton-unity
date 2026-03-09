@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Alert } from "../ui";
+import { Alert, LinkifyText } from "../ui";
 import { 
   CLOUDS, 
   AWS_REGIONS, 
@@ -15,6 +15,7 @@ import {
   COMPLIANCE_STANDARDS,
   FQDN_GROUPS,
   FIELD_GROUPS,
+  PLACEHOLDER_OVERRIDES,
 } from "../../constants";
 import type { ObjectSubField } from "../../constants";
 import { TerraformVariable } from "../../types";
@@ -50,7 +51,7 @@ const COLLAPSIBLE_SECTIONS = new Set([
   "Encryption",
   "Security & Compliance",
   "Metastore & Catalog",
-  "Optional Settings",
+  "Additional Settings",
   "Other Configuration",
   "Tags",
 ]);
@@ -73,7 +74,7 @@ export function ConfigurationScreen() {
   const [showTags, setShowTags] = usePersistedCollapse("tags", false);
   const [showSecurity, setShowSecurity] = usePersistedCollapse("security", false);
   const [showMetastore, setShowMetastore] = usePersistedCollapse("metastore", false);
-  const [showOptional, setShowOptional] = usePersistedCollapse("optional", false);
+  const [showAdditional, setShowAdditional] = usePersistedCollapse("optional", false);
   const [showOther, setShowOther] = usePersistedCollapse("other", false);
   const [showHub, setShowHub] = usePersistedCollapse("hub", false);
   const [showWsNetwork, setShowWsNetwork] = usePersistedCollapse("wsNetwork", false);
@@ -383,8 +384,8 @@ export function ConfigurationScreen() {
       conditionallyRequired.add("hub_vnet_cidr");
       conditionallyRequired.add("hub_resource_suffix");
     } else {
-      conditionallyRequired.add("databricks_metastore_id");
       conditionallyRequired.add("existing_ncc_id");
+      conditionallyRequired.add("existing_ncc_name");
       conditionallyRequired.add("existing_network_policy_id");
       conditionallyRequired.add("existing_hub_vnet__route_table_id");
       conditionallyRequired.add("existing_hub_vnet__vnet_id");
@@ -599,7 +600,7 @@ export function ConfigurationScreen() {
     "Encryption": [showEncryption, setShowEncryption],
     "Security & Compliance": [showSecurity, setShowSecurity],
     "Metastore & Catalog": [showMetastore, setShowMetastore],
-    "Optional Settings": [showOptional, setShowOptional],
+    "Additional Settings": [showAdditional, setShowAdditional],
     "Other Configuration": [showOther, setShowOther],
     "Tags": [showTags, setShowTags],
   };
@@ -614,9 +615,9 @@ export function ConfigurationScreen() {
     "Encryption": "Customer-managed key (CMK) encryption for managed disks and services.",
     "Security & Compliance": "Security profiles, encryption, and compliance settings.",
     "Metastore & Catalog": "Configure Unity Catalog metastore and workspace catalog.",
-    "Optional Settings": "These settings have sensible defaults. Expand to customize.",
+    "Additional Settings": "These settings have sensible defaults. Expand to customize.",
     "Other Configuration": "Additional configuration options.",
-    "Tags": "Optional key-value pairs to tag all created resources for cost tracking and organization.",
+    "Tags": "Key-value pairs to tag all created resources for cost tracking and organization.",
   };
 
   const renderSubField = (sf: ObjectSubField) => {
@@ -749,7 +750,7 @@ export function ConfigurationScreen() {
             </h4>
             {(VARIABLE_DESCRIPTION_OVERRIDES[variable.name] || variable.description) && (
               <div className="help-text" style={{ marginBottom: "12px" }}>
-                {VARIABLE_DESCRIPTION_OVERRIDES[variable.name] || variable.description}
+                <LinkifyText text={VARIABLE_DESCRIPTION_OVERRIDES[variable.name] || variable.description} />
               </div>
             )}
             <div className="two-column">
@@ -1100,7 +1101,7 @@ export function ConfigurationScreen() {
             spellCheck={false}
             value={formValues[variable.name] || ""}
             onChange={(e) => handleFormChange(variable.name, e.target.value)}
-            placeholder={variable.default || ""}
+            placeholder={PLACEHOLDER_OVERRIDES[variable.name] || variable.default || ""}
             className={
               (formSubmitAttempted && formValidation.missingFields.includes(variable.name)) ||
               (formValidation.fieldErrors[variable.name]) ? "input-error" : ""
@@ -1114,7 +1115,7 @@ export function ConfigurationScreen() {
         )}
         {(VARIABLE_DESCRIPTION_OVERRIDES[variable.name] || variable.description) && !formValidation.fieldErrors[variable.name] && (
           <div className="help-text">
-            {VARIABLE_DESCRIPTION_OVERRIDES[variable.name] || variable.description}
+            <LinkifyText text={VARIABLE_DESCRIPTION_OVERRIDES[variable.name] || variable.description} />
           </div>
         )}
         {variable.name === "cidr" && vnetOverlap && (

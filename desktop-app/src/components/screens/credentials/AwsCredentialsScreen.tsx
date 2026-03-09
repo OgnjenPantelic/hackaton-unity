@@ -16,7 +16,6 @@ export function AwsCredentialsScreen() {
   const { permissionWarningAcknowledged, setPermissionWarningAcknowledged } = ctx;
   const validationAttempted = ctx.awsValidationAttempted;
   const awsLoginInProgress = ctx.aws.loginInProgress;
-  const onCheckIdentity = ctx.aws.checkIdentity;
   const onSsoLogin = ctx.handleAwsSsoLogin;
   const onCancelSsoLogin = ctx.aws.cancelSsoLogin;
   const onProfileChange = ctx.handleAwsProfileChange;
@@ -117,7 +116,7 @@ export function AwsCredentialsScreen() {
                 <div className="form-group">
                   <label>AWS Profile</label>
                   <select
-                    value={credentials.aws_profile || ""}
+                    value={credentials.aws_profile || awsProfiles[0]?.name || ""}
                     onChange={(e) => onProfileChange(e.target.value)}
                   >
                     {awsProfiles.map((p) => (
@@ -161,7 +160,7 @@ export function AwsCredentialsScreen() {
                         <button
                           type="button"
                           className="btn btn-small btn-secondary"
-                          onClick={() => onCheckIdentity(credentials.aws_profile || "default")}
+                          onClick={onRefreshProfiles}
                           disabled={awsLoading || checkingPermissions}
                         >
                           {awsLoading ? "Verifying..." : "Verify"}

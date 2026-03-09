@@ -88,7 +88,7 @@ function useElapsedTimer(active: boolean) {
 
 interface ResourceEntry {
   id: string;
-  status: "pending" | "creating" | "created" | "destroying" | "destroyed";
+  status: "pending" | "creating" | "created" | "imported" | "destroying" | "destroyed";
   duration?: string;
 }
 
@@ -109,6 +109,7 @@ function useResourceTimeline(output: string | undefined): TimelineData | null {
     const plannedDestroy = new Set<string>();
     const creating = new Set<string>();
     const created = new Map<string, string>();
+    const imported = new Map<string, boolean>();
     const destroying = new Set<string>();
     const destroyed = new Map<string, string>();
 
@@ -121,6 +122,12 @@ function useResourceTimeline(output: string | undefined): TimelineData | null {
 
       const willUpdate = line.match(/^#\s+(\S+)\s+will be updated/);
       if (willUpdate) { planned.add(willUpdate[1]); continue; }
+
+      const importedMatch = line.match(/^\[IMPORTED\]\s+(\S+)/);
+      if (importedMatch) {
+        imported.set(importedMatch[1], true);
+        continue;
+      }
 
       const creatingMatch = line.match(/^([^:]+):\s*Creating\.\.\./);
       if (creatingMatch) {
@@ -175,7 +182,9 @@ function useResourceTimeline(output: string | undefined): TimelineData | null {
       }
     }
 
-    const planMatch = output.match(/Plan:\s*(\d+)\s*to add,\s*(\d+)\s*to change,\s*(\d+)\s*to destroy/);
+    // Use the last Plan: line so the denominator reflects the latest retry
+    const planMatches = [...output.matchAll(/Plan:\s*(\d+)\s*to add,\s*(\d+)\s*to change,\s*(\d+)\s*to destroy/g)];
+    const planMatch = planMatches.length > 0 ? planMatches[planMatches.length - 1] : null;
     const plannedTotal = planMatch ? parseInt(planMatch[1], 10) + parseInt(planMatch[2], 10) : planned.size;
     const plannedDestroyTotal = planMatch ? parseInt(planMatch[3], 10) : plannedDestroy.size;
 
@@ -197,6 +206,11 @@ function useResourceTimeline(output: string | undefined): TimelineData | null {
       }
     } else {
       resources = [];
+      for (const name of imported.keys()) {
+        if (!created.has(name)) {
+          resources.push({ id: name, status: "imported" });
+        }
+      }
       for (const [name, dur] of created) {
         resources.push({ id: name, status: "created", duration: dur || undefined });
       }
@@ -204,7 +218,7 @@ function useResourceTimeline(output: string | undefined): TimelineData | null {
         resources.push({ id: name, status: "creating" });
       }
       for (const name of planned) {
-        if (!creating.has(name) && !created.has(name)) {
+        if (!creating.has(name) && !created.has(name) && !imported.has(name)) {
           resources.push({ id: name, status: "pending" });
         }
       }
@@ -216,7 +230,7 @@ function useResourceTimeline(output: string | undefined): TimelineData | null {
       resources,
       plannedToCreate: plannedTotal,
       plannedToDestroy: plannedDestroyTotal,
-      createdCount: created.size,
+      createdCount: created.size + imported.size,
       destroyedCount: destroyed.size,
     };
   }, [output]);
@@ -233,6 +247,13 @@ function formatResourceName(id: string): string {
 }
 
 const ResourceRowIcon = ({ status }: { status: ResourceEntry["status"] }) => {
+  if (status === "imported") {
+    return (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-secondary)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="20 6 9 17 4 12" />
+      </svg>
+    );
+  }
   if (status === "created" || status === "destroyed") {
     const color = status === "created" ? "var(--success)" : "var(--error)";
     return (
@@ -294,6 +315,7 @@ function ResourceTimeline({ resources, total, completed, isRollingBack }: {
             <span className="resource-row-status">
               {r.status === "creating" && "Creating..."}
               {r.status === "created" && "Created"}
+              {r.status === "imported" && "Imported"}
               {r.status === "destroying" && "Destroying..."}
               {r.status === "destroyed" && "Destroyed"}
             </span>
@@ -344,7 +366,7 @@ export function DeploymentScreen() {
   const onGoToUcConfig = () => setScreen("unity-catalog-config");
   const status = deploymentStatus;
 
-  const [confirmAction, setConfirmAction] = useState<"cancel" | "rollback" | null>(null);
+  const [confirmAction, setConfirmAction] = useState<"cancel" | "rollback" | "newDeployment" | "newDeploymentAfterSuccess" | null>(null);
   const isWorking = deploymentStep === "initializing" || deploymentStep === "planning" || deploymentStep === "deploying";
   const elapsedStr = useElapsedTimer(isWorking);
   
@@ -400,8 +422,10 @@ export function DeploymentScreen() {
     <div className="container">
       {confirmAction === "cancel" && (
         <ConfirmDialog
-          title="Cancel Deployment?"
-          message="This will stop the current operation. Resources that have already been created will remain and may need manual cleanup."
+          title={isRollingBack ? "Cancel Cleanup?" : "Cancel Deployment?"}
+          message={isRollingBack
+            ? "Cancelling mid-cleanup can leave resources in an inconsistent state, with some removed and others still remaining. It is recommended to wait for the cleanup to complete."
+            : "Cancelling mid-deployment can leave resources in an inconsistent state. It is recommended to wait for the deployment to complete and then clean up if needed."}
           confirmLabel="Yes, Cancel"
           onConfirm={() => { setConfirmAction(null); onCancel(); }}
           onCancel={() => setConfirmAction(null)}
@@ -413,6 +437,24 @@ export function DeploymentScreen() {
           message="This will destroy all resources created by this deployment. This action cannot be undone."
           confirmLabel="Yes, Delete All"
           onConfirm={() => { setConfirmAction(null); onRollback(); }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+      {confirmAction === "newDeployment" && (
+        <ConfirmDialog
+          title="Start New Deployment?"
+          message="This will clear the current configuration and return to the welcome screen. Any partially created resources from the failed deployment will remain."
+          confirmLabel="Yes, Start New"
+          onConfirm={() => { setConfirmAction(null); onResetToWelcome(); }}
+          onCancel={() => setConfirmAction(null)}
+        />
+      )}
+      {confirmAction === "newDeploymentAfterSuccess" && (
+        <ConfirmDialog
+          title="Start New Deployment?"
+          message="This will clear the current configuration and return to the welcome screen. Your deployed resources will not be affected."
+          confirmLabel="Yes, Start New"
+          onConfirm={() => { setConfirmAction(null); onResetToWelcome(true); }}
           onCancel={() => setConfirmAction(null)}
         />
       )}
@@ -452,9 +494,9 @@ export function DeploymentScreen() {
               {deploymentStep === "deploying" && resourceCounts && (resourceCounts.creating > 0 || resourceCounts.destroying > 0) ? (
                 isRollingBack 
                   ? `${resourceCounts.destroyed} of ${resourceCounts.plannedToDestroy || resourceCounts.destroying} resources removed`
-                  : `${resourceCounts.created} of ${resourceCounts.plannedToCreate || resourceCounts.creating} resources created`
+                  : `${resourceCounts.created} of ${resourceCounts.plannedToCreate || resourceCounts.creating} resources completed`
               ) : null}
-              <span style={{ color: "var(--text-muted)", marginLeft: (isRollingBack ? resourceCounts?.destroying : resourceCounts?.creating) ? "12px" : "0", fontSize: "13px" }}>
+              <span style={{ color: "var(--text-muted)", marginLeft: "12px", fontSize: "13px" }}>
                 Elapsed: {elapsedStr}
               </span>
             </div>
@@ -583,7 +625,7 @@ export function DeploymentScreen() {
               )}
 
               <div style={{ display: "flex", gap: "12px", width: "100%", marginBottom: "20px" }}>
-                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => onResetToWelcome()}>
+                <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setConfirmAction("newDeploymentAfterSuccess")}>
                   Start New Deployment
                 </button>
                 {templatePath && (
@@ -607,7 +649,7 @@ export function DeploymentScreen() {
         })()}
         
         {deploymentStep === "complete" && isRollingBack && (
-          <button className="btn" onClick={() => onResetToWelcome(true)}>
+          <button className="btn" onClick={() => setConfirmAction("newDeploymentAfterSuccess")}>
             Start New Deployment
           </button>
         )}
@@ -636,6 +678,9 @@ export function DeploymentScreen() {
             })()}
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
               <button className="btn" onClick={onStartDeployment}>Try Again</button>
+              <button className="btn btn-secondary" onClick={() => setConfirmAction("newDeployment")}>
+                Start New Deployment
+              </button>
               {status?.can_rollback && (
                 <button className="btn btn-danger" onClick={() => setConfirmAction("rollback")}>
                   Cleanup Resources

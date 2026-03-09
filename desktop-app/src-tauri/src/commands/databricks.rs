@@ -471,6 +471,8 @@ pub async fn check_uc_permissions(
         .as_deref()
         .unwrap_or("credentials");
 
+    debug_log!("[check_uc_permissions] ENTER: cloud={}, auth_type={}, region={}", cloud, auth_type, region);
+
     // Azure Identity mode: use Azure CLI to get token and call Databricks API directly
     if cloud == "azure" && credentials.azure_databricks_use_identity == Some(true) {
         debug_log!("[check_uc_permissions] Using Azure identity mode");
@@ -495,6 +497,7 @@ pub async fn check_uc_permissions(
         };
         
         // Get Azure AD token for Databricks
+        debug_log!("[check_uc_permissions] running: az account get-access-token ...");
         let token_output = std::process::Command::new(&az_cli_path)
             .args([
                 "account", "get-access-token",
@@ -503,6 +506,7 @@ pub async fn check_uc_permissions(
                 "-o", "tsv"
             ])
             .output();
+        debug_log!("[check_uc_permissions] az CLI finished, success={}", token_output.as_ref().map(|o| o.status.success()).unwrap_or(false));
         
         if let Ok(output) = token_output {
             if output.status.success() {
@@ -521,11 +525,13 @@ pub async fn check_uc_permissions(
                     mask_sensitive_id(account_id)
                 );
                 
+                debug_log!("[check_uc_permissions] sending metastores GET to {}", metastores_url);
                 let metastores_response = client
                     .get(&metastores_url)
                     .bearer_auth(&azure_token)
                     .send()
                     .await;
+                debug_log!("[check_uc_permissions] metastores response received, ok={}", metastores_response.is_ok());
                 
                 if let Ok(metastores_resp) = metastores_response {
                     if metastores_resp.status().is_success() {
@@ -578,6 +584,7 @@ pub async fn check_uc_permissions(
         }
         
         // Fallback if any step fails
+        debug_log!("[check_uc_permissions] Azure identity path: falling back (some step failed)");
         return Ok(UCPermissionCheck {
             metastore: MetastoreInfo {
                 exists: false,
@@ -594,6 +601,7 @@ pub async fn check_uc_permissions(
     }
 
     // For AWS/Azure with profile auth, use Databricks CLI to list metastores
+    debug_log!("[check_uc_permissions] checking profile path: auth_type={}, cloud={}", auth_type, cloud);
     if auth_type == "profile" && cloud != "gcp" {
         let profile_name = credentials
             .databricks_profile
@@ -601,8 +609,10 @@ pub async fn check_uc_permissions(
             .unwrap_or("DEFAULT");
 
         let cli_path = dependencies::find_databricks_cli_path();
+        debug_log!("[check_uc_permissions] profile={}, cli found={}", profile_name, cli_path.is_some());
 
         if let Some(cli) = cli_path {
+            debug_log!("[check_uc_permissions] running: databricks account metastores list -p {}", profile_name);
             let output = std::process::Command::new(&cli)
                 .args([
                     "account",
@@ -614,6 +624,7 @@ pub async fn check_uc_permissions(
                     profile_name,
                 ])
                 .output();
+            debug_log!("[check_uc_permissions] CLI command finished, success={}", output.as_ref().map(|o| o.status.success()).unwrap_or(false));
 
             if let Ok(out) = output {
                 if out.status.success() {
@@ -667,6 +678,7 @@ pub async fn check_uc_permissions(
     }
 
     // For GCP, generate an ID token and call the Databricks Account Metastores API
+    debug_log!("[check_uc_permissions] checking GCP path: cloud={}", cloud);
     if cloud == "gcp" {
         let mut id_token: Option<String> = None;
 
@@ -957,6 +969,7 @@ pub async fn check_uc_permissions(
     }
 
     // Service principal credentials path
+    debug_log!("[check_uc_permissions] entering SP credentials path");
     let client_id = credentials
         .databricks_client_id
         .as_ref()
@@ -976,6 +989,7 @@ pub async fn check_uc_permissions(
         accounts_host, account_id
     );
 
+    debug_log!("[check_uc_permissions] requesting OAuth token from {}", token_url);
     let client = http_client()?;
 
     let token_response = client
@@ -1013,6 +1027,7 @@ pub async fn check_uc_permissions(
     let access_token = token_json["access_token"]
         .as_str()
         .ok_or("No access token in response")?;
+    debug_log!("[check_uc_permissions] OAuth token obtained successfully");
 
     // List metastores (account-level API requires /accounts/{account_id} in path)
     let metastores_url = format!(
@@ -1020,12 +1035,14 @@ pub async fn check_uc_permissions(
         accounts_host, account_id
     );
 
+    debug_log!("[check_uc_permissions] listing metastores from {}", metastores_url);
     let metastores_response = client
         .get(&metastores_url)
         .bearer_auth(access_token)
         .send()
         .await
         .map_err(|e| format!("Failed to list metastores: {}", e))?;
+    debug_log!("[check_uc_permissions] metastores response status={}", metastores_response.status());
 
     if !metastores_response.status().is_success() {
         return Ok(UCPermissionCheck {
@@ -1077,11 +1094,13 @@ pub async fn check_uc_permissions(
             accounts_host, account_id, metastore_id
         );
 
+        debug_log!("[check_uc_permissions] fetching permissions from {}", permissions_url);
         let permissions_response = client
             .get(&permissions_url)
             .bearer_auth(access_token)
             .send()
             .await;
+        debug_log!("[check_uc_permissions] permissions response received");
 
         let (has_create_catalog, has_create_external_location, has_create_storage_credential) =
             if is_owner {

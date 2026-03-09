@@ -38,18 +38,23 @@ export function useUnityCatalog(
   const [ucCheckError, setUcCheckError] = useState<string | null>(null);
 
   const performUCPermissionCheck = useCallback(async () => {
-    if (!selectedTemplate) return;
+    if (!selectedTemplate) { console.debug("[UC] skipped: no template"); return; }
 
+    console.debug("[UC] starting check, cloud=%s, authType=%s, region=%s",
+      selectedCloud, credentials.databricks_auth_type,
+      formValues.region || formValues.location || formValues.google_region || "(empty)");
     setUcCheckLoading(true);
     setUcCheckError(null);
 
     try {
       const region = formValues.region || formValues.location || formValues.google_region || "";
       const credsWithCloud = { ...credentials, cloud: selectedCloud };
+      console.debug("[UC] invoking check_uc_permissions...");
       const result = await invoke<UCPermissionCheck>("check_uc_permissions", {
         credentials: credsWithCloud,
         region,
       });
+      console.debug("[UC] invoke returned, metastore exists=%s", result.metastore?.exists);
       setUcPermissionCheck(result);
       if (result.metastore?.metastore_id) {
         setUcConfig((prev) => ({
@@ -58,8 +63,10 @@ export function useUnityCatalog(
         }));
       }
     } catch (e: unknown) {
+      console.error("[UC] invoke failed:", e);
       setUcCheckError(`Failed to check permissions: ${String(e)}`);
     } finally {
+      console.debug("[UC] done, setting loading=false");
       setUcCheckLoading(false);
     }
   }, [selectedTemplate, formValues.region, formValues.location, formValues.google_region, credentials, selectedCloud]);
@@ -67,6 +74,7 @@ export function useUnityCatalog(
   // Auto-check UC permissions when entering the UC config screen
   useEffect(() => {
     if (screen === "unity-catalog-config" && !ucPermissionCheck && !ucCheckLoading) {
+      console.debug("[UC] auto-check triggered (screen=%s, hasResult=%s, loading=%s)", screen, !!ucPermissionCheck, ucCheckLoading);
       performUCPermissionCheck();
     }
   }, [screen, ucPermissionCheck, ucCheckLoading, performUCPermissionCheck]);

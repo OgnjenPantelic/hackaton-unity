@@ -97,16 +97,17 @@ If you're adding an entirely new template (not just modifying an existing one):
 When `terraform apply` fails because resources already exist, the backend automatically:
 
 1. Parses the error output with `parse_importable_errors()` in `terraform.rs`
-2. Detects three resource types: `Azurerm` (Azure resource IDs), `DatabricksPeRule` (Private Endpoint rule IDs), `DatabricksGeneric` (NCC / network policies)
+2. Detects four resource types: `Azurerm` (Azure resource IDs), `AzureRoleAssignment` (409 RoleAssignmentExists — ID resolved at import time via Azure CLI), `DatabricksPeRule` (Private Endpoint rule IDs), `DatabricksGeneric` (NCC / network policies)
 3. Runs `terraform import` for each detected resource
 4. Retries `terraform apply` (up to 3 rounds)
 
 This logic lives entirely in `terraform.rs` — the helpers are:
 
 - `parse_importable_errors(output)` → `Vec<ImportableResource>` — regex-based error parser
-- `resolve_import_pair(resource, ncc_id)` → `(tf_address, import_id)` — maps a resource to its import arguments
+- `resolve_import_pair(resource, ncc_id)` → `(tf_address, import_id)` — maps a resource to its import arguments (returns `None` for `AzureRoleAssignment`)
+- `resolve_azure_role_assignment_id(tf_address, dir, env)` → runs `terraform show -json` + `az role assignment list` to look up the assignment GUID at import time
 - `build_import_env(base_env)` → injects placeholder provider URLs needed during import
-- `run_import_batch(resources, ncc_id, dir, env, log)` → runs all imports, returns success
+- `run_import_batch(resources, ncc_id, dir, env, log)` → runs all imports, returns success (handles deferred `AzureRoleAssignment` resolution inline)
 - `import_and_retry_apply(dir, env, status, process)` → full orchestration: parse → import → retry
 
 ### Adding support for a new "already exists" pattern
@@ -115,7 +116,7 @@ If a Terraform provider returns a new "already exists" error format:
 
 1. Add a new variant to the `ImportableResource` enum in `terraform.rs`
 2. Add a new `lazy_static!` regex in `parse_importable_errors()`
-3. Handle the new variant in `resolve_import_pair()`
+3. Handle the new variant in `resolve_import_pair()` (or defer resolution in `run_import_batch()` if the import ID isn't in the error message)
 4. Add test cases in the `parse_importable_errors` test section
 
 ### Provider overrides for import

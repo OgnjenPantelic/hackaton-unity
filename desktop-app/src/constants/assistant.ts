@@ -1,5 +1,5 @@
 export const ASSISTANT = {
-  MAX_HISTORY_MESSAGES: 20,
+  MAX_HISTORY_MESSAGES: 6,
 } as const;
 
 export const ASSISTANT_PROVIDERS = {
@@ -40,7 +40,7 @@ export const SCREEN_CONTEXT: Record<string, string> = {
   "template-selection": "The user is selecting a Terraform deployment template. There are two templates per cloud: a Standard template (aws-simple, azure-simple, gcp-simple) for straightforward deployments, and an SRA (Security Reference Architecture) template (aws-sra, azure-sra, gcp-sra) for enterprise/regulated environments with PrivateLink/PE/PSC, customer-managed encryption keys, and compliance controls. Each card shows features.",
   "configuration": "The user is filling in Terraform template variables. Standard templates have: workspace name, region, networking (VPC/VNet/subnet CIDRs), tags, and optional existing VPC/VNet settings. SRA templates have additional options: PrivateLink/PE/PSC configuration, CMK/CMEK encryption settings, compliance profiles, Security Analysis Tool (SAT), firewall rules (Azure), hub-spoke architecture with Databricks account resources like NCC and network policy (Azure), network hardening (GCP), and IP access lists (GCP). For Azure SRA, the 'Create Hub & Account Resources' toggle controls whether hub infrastructure and Databricks account-level resources (NCC, network policy, metastore) are created or must be provided as existing IDs. SAT configuration, Allowed FQDNs, and hub naming fields are only visible when hub creation is enabled (SAT is a hub-only feature). Values have validation rules.",
   "unity-catalog-config": "The user is configuring Unity Catalog (optional). They can enable it with a catalog name and storage location (S3 bucket/Azure Storage/GCS bucket). The app auto-detects if a metastore exists in the region. Storage names must be globally unique.",
-  "deployment": "The user is on the deployment screen. Terraform runs in stages: init → plan → review → apply. A resource progress timeline shows each resource's status (pending/creating/created) with a progress bar. If apply fails with 'already exists' errors, the app auto-imports conflicting resources and retries. They can cancel a running deployment or rollback after failure. Standard template deployments typically take 10-15 minutes. SRA template deployments typically take 20-40 minutes due to additional resources (PrivateLink, CMK, hub infrastructure, etc.).",
+  "deployment": "The user is on the deployment screen. Terraform runs in stages: init → plan → review → apply. A resource progress timeline shows each resource's status (pending/creating/created/imported) with a progress bar. If apply fails with 'already exists' errors, the app auto-imports conflicting resources and retries. They can cancel a running deployment, rollback after failure, or start a new deployment. Standard template deployments typically take 10-15 minutes. SRA template deployments typically take 20-40 minutes due to additional resources (PrivateLink, CMK, hub infrastructure, etc.).",
 };
 
 export const ASSISTANT_SAMPLE_QUESTIONS: Record<string, string[]> = {

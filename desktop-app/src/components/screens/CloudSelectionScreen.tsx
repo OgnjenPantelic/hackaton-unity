@@ -3,7 +3,7 @@ import { CLOUDS, CLOUD_DISPLAY_NAMES } from '../../constants';
 import { useWizard } from '../../hooks/useWizard';
 
 const CloudSelectionScreen: React.FC = () => {
-  const { loadingCloud, selectCloud, selectedCloud, goBack } = useWizard();
+  const { loadingCloud, selectCloud, selectedCloud, goBack, cancelCloudSelection } = useWizard();
 
   const clouds = [
     { id: CLOUDS.AZURE, name: "Azure", desc: "Deploy on Microsoft Azure with VNet injection and Unity Catalog support" },
@@ -28,7 +28,7 @@ const CloudSelectionScreen: React.FC = () => {
             <div>Checking {CLOUD_DISPLAY_NAMES[loadingCloud] || loadingCloud} dependencies...</div>
             <button
               className="btn btn-secondary"
-              onClick={goBack}
+              onClick={cancelCloudSelection}
               style={{ marginTop: "16px" }}
             >
               Cancel

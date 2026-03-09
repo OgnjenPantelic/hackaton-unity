@@ -2913,6 +2913,13 @@ input[type="checkbox"] {
   color: #ff6b6b;
 }
 
+.resource-row.imported .resource-row-name {
+  color: var(--text-secondary);
+}
+.resource-row.imported .resource-row-status {
+  color: var(--text-secondary);
+}
+
 .resource-row.pending {
   opacity: 0.35;
 }

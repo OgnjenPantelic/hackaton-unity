@@ -6,14 +6,21 @@
 use aes_gcm::aead::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use tauri::{AppHandle, Manager};
+
+use super::debug_log;
 
 // ─── Static Knowledge Base ──────────────────────────────────────────────────
 
 /// Embedded at compile time from resources/assistant-knowledge.md.
 const KNOWLEDGE_BASE: &str = include_str!("../../resources/assistant-knowledge.md");
+
+/// Parsed knowledge base sections, initialized once on first access.
+static KNOWLEDGE_SECTIONS: OnceLock<HashMap<String, String>> = OnceLock::new();
 
 // ─── Provider Configuration ─────────────────────────────────────────────────
 
@@ -242,10 +249,103 @@ fn save_settings_to_disk(app: &AppHandle, settings: &AssistantSettings) -> Resul
     fs::write(&path, content).map_err(|e| format!("Failed to save settings: {}", e))
 }
 
-/// Assemble the full system prompt from the three layers.
-fn build_system_prompt(screen_context: &str, state_metadata: &str) -> String {
-    let mut prompt = String::with_capacity(KNOWLEDGE_BASE.len() + 512);
-    prompt.push_str(KNOWLEDGE_BASE);
+// ─── Token Budget Constants ──────────────────────────────────────────────────
+
+const MAX_RESPONSE_TOKENS: usize = 1024;
+const GITHUB_MODELS_INPUT_BUDGET: usize = 8000 - MAX_RESPONSE_TOKENS;
+const OPENAI_INPUT_BUDGET: usize = 15000;
+const CLAUDE_INPUT_BUDGET: usize = 15000;
+
+/// Rough token estimate: ~4 chars per token for English text.
+fn estimate_tokens(text: &str) -> usize {
+    text.len() / 4
+}
+
+/// Return the input token budget for a given provider.
+fn input_budget_for_provider(provider: &LlmProvider) -> usize {
+    match provider {
+        LlmProvider::GithubModels => GITHUB_MODELS_INPUT_BUDGET,
+        LlmProvider::Openai => OPENAI_INPUT_BUDGET,
+        LlmProvider::Claude => CLAUDE_INPUT_BUDGET,
+    }
+}
+
+// ─── Knowledge Base Section Parsing ─────────────────────────────────────────
+
+const SECTION_MARKER_PREFIX: &str = "<!-- section: ";
+const SECTION_MARKER_SUFFIX: &str = " -->";
+
+/// Parse KNOWLEDGE_BASE into named sections delimited by `<!-- section: name -->`.
+fn parse_knowledge_sections() -> HashMap<String, String> {
+    let mut sections = HashMap::new();
+    let mut current_section = String::new();
+    let mut current_content = String::new();
+
+    for line in KNOWLEDGE_BASE.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix(SECTION_MARKER_PREFIX) {
+            if let Some(name) = rest.strip_suffix(SECTION_MARKER_SUFFIX) {
+                if !current_section.is_empty() || !current_content.is_empty() {
+                    let key = if current_section.is_empty() { "core".to_string() } else { current_section };
+                    sections.insert(key, current_content.trim().to_string());
+                }
+                current_section = name.to_string();
+                current_content = String::new();
+                continue;
+            }
+        }
+        current_content.push_str(line);
+        current_content.push('\n');
+    }
+
+    if !current_section.is_empty() || !current_content.is_empty() {
+        let key = if current_section.is_empty() { "core".to_string() } else { current_section };
+        sections.insert(key, current_content.trim().to_string());
+    }
+
+    sections
+}
+
+/// Get the parsed knowledge sections (initialized once).
+fn get_knowledge_sections() -> &'static HashMap<String, String> {
+    KNOWLEDGE_SECTIONS.get_or_init(parse_knowledge_sections)
+}
+
+/// Map a screen name to the additional knowledge sections it needs beyond core.
+fn sections_for_screen(screen: &str) -> &'static [&'static str] {
+    match screen {
+        "aws-credentials" | "azure-credentials" | "gcp-credentials" => &["cloud-auth"],
+        "databricks-credentials" => &["databricks-auth"],
+        "template-selection" | "configuration" => &["templates"],
+        "unity-catalog-config" => &["unity-catalog"],
+        "deployment" => &["deployment"],
+        _ => &[],
+    }
+}
+
+/// Assemble the system prompt from core + screen-relevant knowledge sections.
+/// Falls back to the full KNOWLEDGE_BASE if section markers are missing.
+fn build_system_prompt(screen: &str, screen_context: &str, state_metadata: &str) -> String {
+    let sections = get_knowledge_sections();
+
+    let knowledge = if sections.contains_key("core") {
+        let mut parts = Vec::new();
+        if let Some(core) = sections.get("core") {
+            parts.push(core.as_str());
+        }
+        for section_name in sections_for_screen(screen) {
+            if let Some(content) = sections.get(*section_name) {
+                parts.push(content.as_str());
+            }
+        }
+        parts.join("\n\n")
+    } else {
+        debug_log!("[assistant] Warning: knowledge base section markers not found, using full content");
+        KNOWLEDGE_BASE.to_string()
+    };
+
+    let mut prompt = String::with_capacity(knowledge.len() + 512);
+    prompt.push_str(&knowledge);
     prompt.push_str("\n\n# Current Screen Context\n\n");
     prompt.push_str(screen_context);
     if !state_metadata.is_empty() {
@@ -253,6 +353,39 @@ fn build_system_prompt(screen_context: &str, state_metadata: &str) -> String {
         prompt.push_str(state_metadata);
     }
     prompt
+}
+
+/// Truncate history to fit within the remaining token budget.
+/// Keeps the most recent messages, dropping oldest first.
+fn truncate_history_to_budget(
+    history: &[ChatMessage],
+    system_prompt_tokens: usize,
+    user_message_tokens: usize,
+    total_budget: usize,
+) -> Vec<ChatMessage> {
+    let fixed_tokens = system_prompt_tokens + user_message_tokens;
+    if fixed_tokens >= total_budget {
+        debug_log!(
+            "[assistant] System prompt ({}) + user message ({}) already exceeds budget ({}), sending with no history",
+            system_prompt_tokens, user_message_tokens, total_budget
+        );
+        return Vec::new();
+    }
+
+    let mut remaining = total_budget - fixed_tokens;
+    let mut kept: Vec<ChatMessage> = Vec::new();
+
+    for msg in history.iter().rev() {
+        let msg_tokens = estimate_tokens(&msg.content) + 4; // +4 for role/message overhead
+        if msg_tokens > remaining {
+            break;
+        }
+        remaining -= msg_tokens;
+        kept.push(msg.clone());
+    }
+
+    kept.reverse();
+    kept
 }
 
 /// Validate an API key by making a test request to the provider's API.
@@ -565,11 +698,13 @@ pub async fn assistant_save_token(
 
 /// Send a message to the AI assistant and get a response.
 ///
-/// Assembles the system prompt from the knowledge base, screen context, and state
-/// metadata, then calls the appropriate provider's API based on saved settings.
+/// Assembles the system prompt from the knowledge base (scoped to the current screen),
+/// screen context, and state metadata, then calls the appropriate provider's API.
+/// History is truncated to fit within the provider's token budget.
 #[tauri::command]
 pub async fn assistant_chat(
     message: String,
+    screen: String,
     screen_context: String,
     state_metadata: String,
     history: Vec<ChatMessage>,
@@ -587,8 +722,20 @@ pub async fn assistant_chat(
     let enc_key = get_or_create_encryption_key(&app)?;
     let api_key = decrypt_key(&encrypted_key, &enc_key)?;
 
-    let system_prompt = build_system_prompt(&screen_context, &state_metadata);
+    let system_prompt = build_system_prompt(&screen, &screen_context, &state_metadata);
     let client = http_client(60)?;
+
+    // Token-aware history truncation
+    let budget = input_budget_for_provider(&settings.active_provider);
+    let system_tokens = estimate_tokens(&system_prompt);
+    let user_tokens = estimate_tokens(&message);
+    let trimmed_history = truncate_history_to_budget(&history, system_tokens, user_tokens, budget);
+
+    debug_log!(
+        "[assistant] screen={}, provider={:?}, system_tokens={}, user_tokens={}, history={}/{} msgs, budget={}",
+        screen, settings.active_provider, system_tokens, user_tokens,
+        trimmed_history.len(), history.len(), budget
+    );
 
     match settings.active_provider {
         LlmProvider::GithubModels => {
@@ -599,7 +746,7 @@ pub async fn assistant_chat(
                 model,
                 &system_prompt,
                 &message,
-                &history,
+                &trimmed_history,
                 &client,
                 "GitHub Models",
             ).await
@@ -611,7 +758,7 @@ pub async fn assistant_chat(
                 "gpt-4o-mini",
                 &system_prompt,
                 &message,
-                &history,
+                &trimmed_history,
                 &client,
                 "OpenAI",
             ).await
@@ -621,7 +768,7 @@ pub async fn assistant_chat(
                 &api_key,
                 &system_prompt,
                 &message,
-                &history,
+                &trimmed_history,
                 &client,
             ).await
         }
@@ -918,32 +1065,171 @@ mod tests {
         assert!(decrypt_key(&short, &key).is_err());
     }
 
+    // ── knowledge section parsing ──────────────────────────────────────
+
+    #[test]
+    fn parse_knowledge_sections_has_core() {
+        let sections = parse_knowledge_sections();
+        assert!(sections.contains_key("core"), "core section must exist");
+        assert!(sections.get("core").unwrap().contains("What This App Does"));
+    }
+
+    #[test]
+    fn parse_knowledge_sections_has_all_expected_sections() {
+        let sections = parse_knowledge_sections();
+        for name in &["core", "cloud-auth", "databricks-auth", "templates", "unity-catalog", "deployment"] {
+            assert!(sections.contains_key(*name), "missing section: {}", name);
+            assert!(!sections.get(*name).unwrap().is_empty(), "section {} is empty", name);
+        }
+    }
+
+    #[test]
+    fn parse_knowledge_sections_no_marker_leaks() {
+        let sections = parse_knowledge_sections();
+        for (name, content) in &sections {
+            assert!(
+                !content.contains("<!-- section:"),
+                "section {} leaks marker comments into content", name
+            );
+        }
+    }
+
+    // ── sections_for_screen ─────────────────────────────────────────────
+
+    #[test]
+    fn sections_for_screen_credential_screens() {
+        assert_eq!(sections_for_screen("aws-credentials"), &["cloud-auth"]);
+        assert_eq!(sections_for_screen("azure-credentials"), &["cloud-auth"]);
+        assert_eq!(sections_for_screen("gcp-credentials"), &["cloud-auth"]);
+    }
+
+    #[test]
+    fn sections_for_screen_databricks_credentials() {
+        assert_eq!(sections_for_screen("databricks-credentials"), &["databricks-auth"]);
+    }
+
+    #[test]
+    fn sections_for_screen_template_screens() {
+        assert_eq!(sections_for_screen("template-selection"), &["templates"]);
+        assert_eq!(sections_for_screen("configuration"), &["templates"]);
+    }
+
+    #[test]
+    fn sections_for_screen_unity_catalog() {
+        assert_eq!(sections_for_screen("unity-catalog-config"), &["unity-catalog"]);
+    }
+
+    #[test]
+    fn sections_for_screen_deployment() {
+        assert_eq!(sections_for_screen("deployment"), &["deployment"]);
+    }
+
+    #[test]
+    fn sections_for_screen_unknown_returns_empty() {
+        assert!(sections_for_screen("welcome").is_empty());
+        assert!(sections_for_screen("cloud-selection").is_empty());
+        assert!(sections_for_screen("dependencies").is_empty());
+        assert!(sections_for_screen("nonexistent").is_empty());
+    }
+
     // ── build_system_prompt ─────────────────────────────────────────────
 
     #[test]
-    fn build_system_prompt_includes_knowledge_base() {
-        let prompt = build_system_prompt("welcome", "");
-        assert!(prompt.contains(KNOWLEDGE_BASE));
+    fn build_system_prompt_always_includes_core() {
+        let prompt = build_system_prompt("welcome", "ctx", "");
+        assert!(prompt.contains("What This App Does"));
+        assert!(prompt.contains("Common Issues"));
+    }
+
+    #[test]
+    fn build_system_prompt_welcome_excludes_detailed_templates() {
+        let prompt = build_system_prompt("welcome", "ctx", "");
+        assert!(!prompt.contains("## AWS Standard BYOVPC"), "detailed templates should not appear on welcome");
+    }
+
+    #[test]
+    fn build_system_prompt_configuration_includes_templates() {
+        let prompt = build_system_prompt("configuration", "ctx", "");
+        assert!(prompt.contains("## AWS Standard BYOVPC"));
+        assert!(prompt.contains("## Azure Security Reference Architecture"));
     }
 
     #[test]
     fn build_system_prompt_includes_screen_context() {
-        let prompt = build_system_prompt("configuration", "");
+        let prompt = build_system_prompt("welcome", "The user is on the welcome screen.", "");
         assert!(prompt.contains("# Current Screen Context"));
-        assert!(prompt.contains("configuration"));
+        assert!(prompt.contains("The user is on the welcome screen."));
     }
 
     #[test]
     fn build_system_prompt_includes_state_metadata() {
-        let prompt = build_system_prompt("deploy", "cloud=aws, template=aws-simple");
+        let prompt = build_system_prompt("deployment", "ctx", "cloud=aws, template=aws-simple");
         assert!(prompt.contains("# Current App State"));
         assert!(prompt.contains("cloud=aws"));
     }
 
     #[test]
     fn build_system_prompt_omits_state_section_when_empty() {
-        let prompt = build_system_prompt("welcome", "");
+        let prompt = build_system_prompt("welcome", "ctx", "");
         assert!(!prompt.contains("# Current App State"));
+    }
+
+    // ── estimate_tokens ─────────────────────────────────────────────────
+
+    #[test]
+    fn estimate_tokens_empty() {
+        assert_eq!(estimate_tokens(""), 0);
+    }
+
+    #[test]
+    fn estimate_tokens_short_text() {
+        assert_eq!(estimate_tokens("hello world!"), 3);
+    }
+
+    #[test]
+    fn estimate_tokens_longer_text() {
+        let text = "a".repeat(400);
+        assert_eq!(estimate_tokens(&text), 100);
+    }
+
+    // ── truncate_history_to_budget ──────────────────────────────────────
+
+    #[test]
+    fn truncate_history_keeps_all_when_budget_allows() {
+        let history = vec![
+            ChatMessage { role: "user".into(), content: "hi".into() },
+            ChatMessage { role: "assistant".into(), content: "hello".into() },
+        ];
+        let result = truncate_history_to_budget(&history, 100, 10, 10000);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn truncate_history_drops_oldest_first() {
+        let history = vec![
+            ChatMessage { role: "user".into(), content: "a".repeat(400) },       // ~104 tokens
+            ChatMessage { role: "assistant".into(), content: "b".repeat(400) },   // ~104 tokens
+            ChatMessage { role: "user".into(), content: "recent".into() },        // ~5 tokens
+        ];
+        // Budget 130: system(100) + user(10) = 110 remaining = 20. Only "recent" (~5+4=9) fits.
+        let result = truncate_history_to_budget(&history, 100, 10, 130);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].content, "recent");
+    }
+
+    #[test]
+    fn truncate_history_returns_empty_when_budget_exhausted_by_prompt() {
+        let history = vec![
+            ChatMessage { role: "user".into(), content: "hello".into() },
+        ];
+        let result = truncate_history_to_budget(&history, 5000, 100, 5000);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn truncate_history_empty_input() {
+        let result = truncate_history_to_budget(&[], 100, 10, 10000);
+        assert!(result.is_empty());
     }
 
     // ── LlmProvider default ─────────────────────────────────────────────
@@ -951,5 +1237,13 @@ mod tests {
     #[test]
     fn llm_provider_default_is_github_models() {
         assert_eq!(LlmProvider::default(), LlmProvider::GithubModels);
+    }
+
+    // ── input_budget_for_provider ───────────────────────────────────────
+
+    #[test]
+    fn github_budget_is_smallest() {
+        assert!(input_budget_for_provider(&LlmProvider::GithubModels) < input_budget_for_provider(&LlmProvider::Openai));
+        assert!(input_budget_for_provider(&LlmProvider::GithubModels) < input_budget_for_provider(&LlmProvider::Claude));
     }
 }

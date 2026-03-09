@@ -455,14 +455,33 @@ pub enum ImportableResource {
         tf_address: String,
         import_id: String,
     },
+    /// Azure role assignment that returned 409 RoleAssignmentExists.
+    /// The import ID must be resolved at import time via `az role assignment list`
+    /// because the error message does not include the assignment GUID.
+    AzureRoleAssignment {
+        tf_address: String,
+    },
+}
+
+impl ImportableResource {
+    /// Return the Terraform address for any variant.
+    pub fn tf_address(&self) -> &str {
+        match self {
+            ImportableResource::Azurerm { tf_address, .. }
+            | ImportableResource::DatabricksPeRule { tf_address, .. }
+            | ImportableResource::DatabricksGeneric { tf_address, .. }
+            | ImportableResource::AzureRoleAssignment { tf_address } => tf_address,
+        }
+    }
 }
 
 /// Split Terraform output into error blocks and extract importable resources.
 ///
-/// Supports three formats:
+/// Supports four formats:
 ///   Format A (azurerm): `A resource with the ID "..." already exists`
 ///   Format B (databricks PE): `already exists under rule <uuid>`
 ///   Format C (databricks generic): `Network Policy <id> already existed for account <acct>`
+///   Format D (azure role assignment): `RoleAssignmentExists` (409 Conflict, no ID in error)
 pub fn parse_importable_errors(output: &str) -> Vec<ImportableResource> {
     lazy_static::lazy_static! {
         static ref AZURERM_RE: Regex =
@@ -471,6 +490,10 @@ pub fn parse_importable_errors(output: &str) -> Vec<ImportableResource> {
             Regex::new(r"already exists under rule ([0-9a-f-]+)").unwrap();
         static ref NETWORK_POLICY_RE: Regex =
             Regex::new(r"Network Policy (\S+) already existed for account").unwrap();
+        static ref ASSOCIATION_RE: Regex =
+            Regex::new(r#"(?i)an association between "([^"]+)" and "([^"]+)" already exists"#).unwrap();
+        static ref ROLE_ASSIGNMENT_RE: Regex =
+            Regex::new(r"(?i)RoleAssignmentExists").unwrap();
         static ref WITH_RE: Regex =
             Regex::new(r"^\s*with\s+([^,]+),").unwrap();
     }
@@ -510,6 +533,15 @@ pub fn parse_importable_errors(output: &str) -> Vec<ImportableResource> {
             continue;
         }
 
+        // Format E: association between subnet and NSG/route-table
+        if let Some(caps) = ASSOCIATION_RE.captures(&block_text) {
+            results.push(ImportableResource::Azurerm {
+                tf_address,
+                import_id: caps[1].to_string(),
+            });
+            continue;
+        }
+
         // Format B: databricks PE rule
         if let Some(caps) = PE_RULE_RE.captures(&block_text) {
             results.push(ImportableResource::DatabricksPeRule {
@@ -525,6 +557,14 @@ pub fn parse_importable_errors(output: &str) -> Vec<ImportableResource> {
                 tf_address,
                 import_id: caps[1].to_string(),
             });
+            continue;
+        }
+
+        // Format D: azure role assignment (409 RoleAssignmentExists)
+        if ROLE_ASSIGNMENT_RE.is_match(&block_text)
+            && tf_address.contains("role_assignment")
+        {
+            results.push(ImportableResource::AzureRoleAssignment { tf_address });
         }
     }
 
@@ -664,6 +704,130 @@ pub fn resolve_ncc_id(
         .or_else(|| read_tfvar(working_dir, "existing_ncc_id"))
 }
 
+/// Resolve the Azure resource ID of an existing role assignment so it can be
+/// imported into Terraform state.
+///
+/// 1. Runs `terraform show -json` to extract the planned `scope`,
+///    `role_definition_name`, and `principal_id` for `tf_address`.
+/// 2. Runs `az role assignment list` to look up the existing assignment GUID.
+pub fn resolve_azure_role_assignment_id(
+    tf_address: &str,
+    working_dir: &Path,
+    env_vars: &HashMap<String, String>,
+) -> Option<String> {
+    let terraform_path = get_terraform_path();
+    let extended_path = build_extended_path();
+
+    // Step 1: get planned values from Terraform state/plan
+    let show_output = Command::new(&terraform_path)
+        .args(["show", "-json", "-no-color"])
+        .current_dir(working_dir)
+        .envs(env_vars)
+        .env("PATH", &extended_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .ok()?;
+
+    if !show_output.status.success() {
+        return None;
+    }
+
+    let json_text = String::from_utf8_lossy(&show_output.stdout);
+    let parsed: serde_json::Value = serde_json::from_str(&json_text).ok()?;
+
+    // Strip index suffix (e.g. "[0]") from the address for JSON traversal
+    let base_address = tf_address
+        .split('[')
+        .next()
+        .unwrap_or(tf_address);
+
+    // Walk planned_values.root_module.resources (and child modules) to find our resource
+    let (scope, role, principal) = extract_role_assignment_attrs(&parsed, base_address, tf_address)?;
+
+    // Step 2: query Azure CLI for the existing assignment
+    let az_path = crate::dependencies::find_azure_cli_path()?;
+
+    let az_output = Command::new(&az_path)
+        .args([
+            "role", "assignment", "list",
+            "--scope", &scope,
+            "--assignee", &principal,
+            "--role", &role,
+            "--query", "[0].id",
+            "-o", "tsv",
+        ])
+        .current_dir(working_dir)
+        .envs(env_vars)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .ok()?;
+
+    if !az_output.status.success() {
+        return None;
+    }
+
+    let id = String::from_utf8_lossy(&az_output.stdout).trim().to_string();
+    if id.is_empty() {
+        None
+    } else {
+        Some(id)
+    }
+}
+
+/// Walk the `terraform show -json` output to find the planned attributes for a
+/// role assignment resource.  Returns `(scope, role_definition_name, principal_id)`.
+fn extract_role_assignment_attrs(
+    plan_json: &serde_json::Value,
+    base_address: &str,
+    full_address: &str,
+) -> Option<(String, String, String)> {
+    // Try planned_values first, then prior_state
+    for root_key in &["planned_values", "values"] {
+        if let Some(resources) = collect_resources(plan_json.get(root_key)?) {
+            for res in resources {
+                let addr = res["address"].as_str().unwrap_or("");
+                if addr == full_address || addr == base_address
+                    || addr.ends_with(base_address)
+                {
+                    let vals = &res["values"];
+                    let scope = vals["scope"].as_str()?.to_string();
+                    let role = vals["role_definition_name"].as_str()?.to_string();
+                    let principal = vals["principal_id"].as_str()?.to_string();
+                    return Some((scope, role, principal));
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Recursively collect all resources from a root_module JSON node (including
+/// child modules).
+fn collect_resources(root_module_container: &serde_json::Value) -> Option<Vec<&serde_json::Value>> {
+    let root = root_module_container.get("root_module")?;
+    let mut out = Vec::new();
+    collect_resources_recursive(root, &mut out);
+    Some(out)
+}
+
+fn collect_resources_recursive<'a>(
+    module: &'a serde_json::Value,
+    out: &mut Vec<&'a serde_json::Value>,
+) {
+    if let Some(resources) = module.get("resources").and_then(|r| r.as_array()) {
+        for res in resources {
+            out.push(res);
+        }
+    }
+    if let Some(children) = module.get("child_modules").and_then(|c| c.as_array()) {
+        for child in children {
+            collect_resources_recursive(child, out);
+        }
+    }
+}
+
 fn build_extended_path() -> String {
     let install_dir = crate::dependencies::get_terraform_install_path();
     let current_path = std::env::var("PATH").unwrap_or_default();
@@ -688,7 +852,8 @@ fn build_extended_path() -> String {
 pub const PROVIDER_PLACEHOLDER_URL: &str = "https://placeholder.azuredatabricks.net";
 
 /// Resolve the `(tf_address, import_id)` pair for an [`ImportableResource`],
-/// returning `None` when the NCC ID is required but unavailable.
+/// returning `None` when the ID cannot be determined statically (NCC missing
+/// or role-assignment requiring deferred Azure CLI lookup).
 pub fn resolve_import_pair(
     resource: &ImportableResource,
     ncc_id: &Option<String>,
@@ -703,7 +868,50 @@ pub fn resolve_import_pair(
         ImportableResource::DatabricksGeneric { tf_address, import_id } => {
             Some((tf_address.clone(), import_id.clone()))
         }
+        ImportableResource::AzureRoleAssignment { .. } => {
+            // Resolved at import time via Azure CLI; see run_import_batch
+            None
+        }
     }
+}
+
+/// Name of the temporary HCL file used for config-driven import blocks.
+const AUTO_IMPORT_FILENAME: &str = "_auto_import.tf";
+
+/// Group importable resources into `for_each` sibling groups.
+///
+/// Two resources are siblings when they share the same base address up to the
+/// last `["` segment -- that trailing `["key"]` is the `for_each` map key.
+/// Module-index brackets like `module.hub[0]` are NOT treated as sibling keys.
+///
+/// Returns `(sibling_groups, standalone)` where each sibling group has 2+
+/// resources and standalone contains resources with no siblings.
+pub fn group_for_each_siblings(
+    resources: &[ImportableResource],
+) -> (Vec<Vec<&ImportableResource>>, Vec<&ImportableResource>) {
+    let mut groups: HashMap<String, Vec<&ImportableResource>> = HashMap::new();
+
+    for res in resources {
+        let addr = res.tf_address();
+        let base = match addr.rfind("[\"") {
+            Some(pos) => &addr[..pos],
+            None => addr,
+        };
+        groups.entry(base.to_string()).or_default().push(res);
+    }
+
+    let mut sibling_groups = Vec::new();
+    let mut standalone = Vec::new();
+
+    for (_base, members) in groups {
+        if members.len() >= 2 {
+            sibling_groups.push(members);
+        } else {
+            standalone.extend(members);
+        }
+    }
+
+    (sibling_groups, standalone)
 }
 
 /// Build the import environment: clone the base env vars and inject
@@ -719,7 +927,134 @@ pub fn build_import_env(base_env: &HashMap<String, String>) -> HashMap<String, S
     env
 }
 
+/// Write a temporary `_auto_import.tf` file containing HCL `import` blocks for
+/// a group of sibling resources. Returns the path to the generated file.
+///
+/// Each block has the form:
+/// ```hcl
+/// import {
+///   to = <tf_address>
+///   id = "<import_id>"
+/// }
+/// ```
+pub fn write_import_blocks(
+    pairs: &[(String, String)],
+    working_dir: &Path,
+) -> std::io::Result<PathBuf> {
+    let mut hcl = String::new();
+    for (addr, id) in pairs {
+        hcl.push_str(&format!(
+            "import {{\n  to = {}\n  id = \"{}\"\n}}\n\n",
+            addr, id
+        ));
+    }
+    let path = working_dir.join(AUTO_IMPORT_FILENAME);
+    fs::write(&path, &hcl)?;
+    Ok(path)
+}
+
+/// Remove the temporary import file if it exists.
+fn cleanup_import_file(working_dir: &Path) {
+    let path = working_dir.join(AUTO_IMPORT_FILENAME);
+    if path.exists() {
+        let _ = fs::remove_file(&path);
+    }
+}
+
+/// Apply import blocks for a group of `for_each` sibling resources using
+/// `terraform apply -target=<addr>` for each sibling.
+///
+/// This approach writes HCL `import {}` blocks to a temp file, then runs a
+/// single targeted `terraform apply` that processes all siblings atomically,
+/// avoiding "Invalid index" errors that occur when siblings are imported
+/// individually.
+///
+/// Returns `true` if the import apply succeeded.
+pub fn apply_import_blocks(
+    pairs: &[(String, String)],
+    working_dir: &Path,
+    import_env: &HashMap<String, String>,
+    log: &mut dyn FnMut(&str),
+) -> bool {
+    let import_path = match write_import_blocks(pairs, working_dir) {
+        Ok(p) => p,
+        Err(e) => {
+            log(&format!("Failed to write import blocks: {}\n", e));
+            return false;
+        }
+    };
+
+    log(&format!(
+        "Wrote {} import block(s) to {}\n",
+        pairs.len(),
+        import_path.display()
+    ));
+
+    let terraform_path = get_terraform_path();
+    let extended_path = build_extended_path();
+
+    let mut args = vec![
+        "apply".to_string(),
+        "-auto-approve".to_string(),
+        "-no-color".to_string(),
+        "-input=false".to_string(),
+    ];
+    for (addr, _) in pairs {
+        args.push(format!("-target={}", addr));
+    }
+
+    log(&format!(
+        "Running terraform apply with {} target(s) for import...\n",
+        pairs.len()
+    ));
+
+    let output = Command::new(&terraform_path)
+        .args(&args)
+        .current_dir(working_dir)
+        .envs(import_env)
+        .env("PATH", &extended_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+
+    cleanup_import_file(working_dir);
+
+    match output {
+        Ok(out) => {
+            let combined = format!(
+                "{}\n{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            log(&combined);
+            log("\n");
+
+            if out.status.success() {
+                log("Import-block apply succeeded.\n");
+                for (addr, _) in pairs {
+                    log(&format!("[IMPORTED] {}\n", addr));
+                }
+                true
+            } else {
+                log("Import-block apply failed.\n");
+                false
+            }
+        }
+        Err(e) => {
+            log(&format!("Failed to run terraform apply: {}\n", e));
+            false
+        }
+    }
+}
+
 /// Run a batch of `terraform import` commands for the given resources.
+///
+/// Sibling `for_each` resources (resources sharing the same base address with
+/// different map keys) are imported together via HCL import blocks and a
+/// targeted `terraform apply`, avoiding "Invalid index" errors from
+/// interdependent outputs.
+///
+/// Standalone resources are imported individually via `terraform import`.
 ///
 /// Returns `true` if all imports succeeded, `false` if any failed.
 /// Calls `log` for each status message.
@@ -731,18 +1066,87 @@ pub fn run_import_batch(
     log: &mut dyn FnMut(&str),
 ) -> bool {
     let mut all_ok = true;
-    for res in resources {
-        let (address, id) = match resolve_import_pair(res, ncc_id) {
-            Some(pair) => pair,
-            None => {
-                let addr = match res {
-                    ImportableResource::DatabricksPeRule { tf_address, .. } => tf_address,
-                    _ => unreachable!(),
-                };
-                log(&format!("Skipping import of {}: could not resolve NCC ID\n", addr));
-                all_ok = false;
-                continue;
+
+    // Phase 1: Resolve (address, id) pairs for every resource up-front.
+    let mut resolved: Vec<(String, String)> = Vec::new();
+    let mut resolved_indices: Vec<usize> = Vec::new();
+
+    for (i, res) in resources.iter().enumerate() {
+        let pair = match res {
+            ImportableResource::AzureRoleAssignment { tf_address } => {
+                log(&format!("Resolving Azure role assignment ID for {} ...\n", tf_address));
+                match resolve_azure_role_assignment_id(tf_address, working_dir, import_env) {
+                    Some(id) => Some((tf_address.clone(), id)),
+                    None => {
+                        log(&format!(
+                            "Skipping import of {}: could not resolve role assignment ID via Azure CLI\n",
+                            tf_address
+                        ));
+                        all_ok = false;
+                        None
+                    }
+                }
             }
+            _ => match resolve_import_pair(res, ncc_id) {
+                Some(pair) => Some(pair),
+                None => {
+                    log(&format!("Skipping import of {}: could not resolve import ID\n", res.tf_address()));
+                    all_ok = false;
+                    None
+                }
+            },
+        };
+
+        if let Some(p) = pair {
+            resolved.push(p);
+            resolved_indices.push(i);
+        }
+    }
+
+    // Phase 2: Group resolved resources into for_each sibling sets.
+    // Build lightweight ImportableResource::Azurerm wrappers keyed by resolved address
+    // so we can reuse group_for_each_siblings.
+    let wrappers: Vec<ImportableResource> = resolved
+        .iter()
+        .map(|(addr, id)| ImportableResource::Azurerm {
+            tf_address: addr.clone(),
+            import_id: id.clone(),
+        })
+        .collect();
+
+    let (sibling_groups, standalone) = group_for_each_siblings(&wrappers);
+
+    // Phase 3a: Import sibling groups atomically via import blocks.
+    for group in &sibling_groups {
+        let pairs: Vec<(String, String)> = group
+            .iter()
+            .map(|r| match r {
+                ImportableResource::Azurerm { tf_address, import_id } => {
+                    (tf_address.clone(), import_id.clone())
+                }
+                _ => unreachable!(),
+            })
+            .collect();
+
+        let addrs: Vec<&str> = pairs.iter().map(|(a, _)| a.as_str()).collect();
+        log(&format!(
+            "Importing {} for_each siblings together: {}\n",
+            pairs.len(),
+            addrs.join(", ")
+        ));
+
+        if !apply_import_blocks(&pairs, working_dir, import_env, log) {
+            all_ok = false;
+        }
+    }
+
+    // Phase 3b: Import standalone resources individually.
+    for res in &standalone {
+        let (address, id) = match res {
+            ImportableResource::Azurerm { tf_address, import_id } => {
+                (tf_address.clone(), import_id.clone())
+            }
+            _ => unreachable!(),
         };
 
         log(&format!("Importing {} ...\n", address));
@@ -751,6 +1155,7 @@ pub fn run_import_batch(
             Ok(msg) => {
                 log(&msg);
                 log("\n");
+                log(&format!("[IMPORTED] {}\n", address));
             }
             Err(msg) => {
                 all_ok = false;
@@ -758,6 +1163,7 @@ pub fn run_import_batch(
             }
         }
     }
+
     all_ok
 }
 
@@ -822,6 +1228,8 @@ pub fn import_and_retry_apply(
     process: Arc<Mutex<Option<u32>>>,
 ) -> (bool, bool) {
     const MAX_RETRIES: usize = 3;
+
+    cleanup_import_file(working_dir);
 
     let output_snapshot = status.lock()
         .map(|s| s.output.clone())
@@ -1513,6 +1921,166 @@ Error: cannot create mws ncc private endpoint rule: already exists under rule aa
         assert!(matches!(&results[2], ImportableResource::DatabricksPeRule { .. }));
     }
 
+    // ── parse_importable_errors: Format D (RoleAssignmentExists) ──────
+
+    #[test]
+    fn parse_role_assignment_exists() {
+        let output = r#"Error: unexpected status 409 (409 Conflict) with error: RoleAssignmentExists: The role assignment already exists.
+
+  with azurerm_role_assignment.uc_storage_access[0],
+  on catalog.tf line 64, in resource "azurerm_role_assignment" "uc_storage_access":
+  64: resource "azurerm_role_assignment" "uc_storage_access" {
+"#;
+        let results = parse_importable_errors(output);
+        assert_eq!(results.len(), 1);
+        match &results[0] {
+            ImportableResource::AzureRoleAssignment { tf_address } => {
+                assert_eq!(tf_address, "azurerm_role_assignment.uc_storage_access[0]");
+            }
+            _ => panic!("Expected AzureRoleAssignment variant"),
+        }
+    }
+
+    #[test]
+    fn parse_role_assignment_exists_module_path() {
+        let output = r#"Error: unexpected status 409 (409 Conflict) with error: RoleAssignmentExists: The role assignment already exists.
+  with module.catalog.azurerm_role_assignment.blob_data_contrib[0],
+  on modules/catalog/storage_account.tf line 22
+"#;
+        let results = parse_importable_errors(output);
+        assert_eq!(results.len(), 1);
+        match &results[0] {
+            ImportableResource::AzureRoleAssignment { tf_address } => {
+                assert_eq!(tf_address, "module.catalog.azurerm_role_assignment.blob_data_contrib[0]");
+            }
+            _ => panic!("Expected AzureRoleAssignment variant"),
+        }
+    }
+
+    #[test]
+    fn parse_role_assignment_not_matched_for_non_role_resource() {
+        let output = r#"Error: unexpected status 409 (409 Conflict) with error: RoleAssignmentExists: The role assignment already exists.
+  with azurerm_storage_account.this[0],
+  on main.tf line 5
+"#;
+        let results = parse_importable_errors(output);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn parse_mixed_with_role_assignment() {
+        let output = r#"Error: a resource with the ID "/subscriptions/x/resourceGroups/rg" already exists
+  with azurerm_resource_group.this[0],
+  on main.tf line 1
+
+Error: unexpected status 409 (409 Conflict) with error: RoleAssignmentExists: The role assignment already exists.
+  with azurerm_role_assignment.uc_storage_access[0],
+  on catalog.tf line 64
+
+Error: cannot create mws ncc private endpoint rule: already exists under rule aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.
+  with module.cat.module.ncc_blob.databricks_mws_ncc_private_endpoint_rule.this,
+  on modules/self-approving-pe/main.tf line 16
+"#;
+        let results = parse_importable_errors(output);
+        assert_eq!(results.len(), 3);
+        assert!(matches!(&results[0], ImportableResource::Azurerm { .. }));
+        assert!(matches!(&results[1], ImportableResource::AzureRoleAssignment { .. }));
+        assert!(matches!(&results[2], ImportableResource::DatabricksPeRule { .. }));
+    }
+
+    // ── parse_importable_errors: Format E (NSG association) ─────────────
+
+    #[test]
+    fn parse_nsg_association_error() {
+        let output = r#"Error: an association between "/subscriptions/edd4cc45/resourceGroups/rg-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub/subnets/snet-hub-container" and "/subscriptions/edd4cc45/resourceGroups/rg-hub/providers/Microsoft.Network/networkSecurityGroups/nsg-hub" already exists - to be managed via Terraform this association needs to be imported into the State. Please see the resource documentation for "azurerm_subnet_network_security_group_association" for more information
+
+  with module.hub[0].module.hub_network.azurerm_subnet_network_security_group_association.workspace_subnets["container"],
+  on modules/virtual_network/subnets.tf line 25, in resource "azurerm_subnet_network_security_group_association" "workspace_subnets":
+  25: resource "azurerm_subnet_network_security_group_association" "workspace_subnets" {
+"#;
+        let results = parse_importable_errors(output);
+        assert_eq!(results.len(), 1);
+        match &results[0] {
+            ImportableResource::Azurerm { tf_address, import_id } => {
+                assert_eq!(
+                    tf_address,
+                    r#"module.hub[0].module.hub_network.azurerm_subnet_network_security_group_association.workspace_subnets["container"]"#
+                );
+                assert_eq!(
+                    import_id,
+                    "/subscriptions/edd4cc45/resourceGroups/rg-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub/subnets/snet-hub-container"
+                );
+            }
+            other => panic!("expected Azurerm, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_mixed_azurerm_and_nsg_association() {
+        let output = r#"Error: a resource with the ID "/subscriptions/x/resourceGroups/rg" already exists
+  with azurerm_resource_group.this[0],
+  on main.tf line 1
+
+Error: an association between "/subscriptions/x/subnets/snet-host" and "/subscriptions/x/nsg/nsg-1" already exists
+  with module.net.azurerm_subnet_network_security_group_association.workspace_subnets["host"],
+  on subnets.tf line 25
+
+Error: an association between "/subscriptions/x/subnets/snet-container" and "/subscriptions/x/nsg/nsg-1" already exists
+  with module.net.azurerm_subnet_network_security_group_association.workspace_subnets["container"],
+  on subnets.tf line 25
+"#;
+        let results = parse_importable_errors(output);
+        assert_eq!(results.len(), 3);
+        match &results[0] {
+            ImportableResource::Azurerm { import_id, .. } => {
+                assert_eq!(import_id, "/subscriptions/x/resourceGroups/rg");
+            }
+            other => panic!("expected Azurerm, got {:?}", other),
+        }
+        match &results[1] {
+            ImportableResource::Azurerm { import_id, .. } => {
+                assert_eq!(import_id, "/subscriptions/x/subnets/snet-host");
+            }
+            other => panic!("expected Azurerm, got {:?}", other),
+        }
+        match &results[2] {
+            ImportableResource::Azurerm { import_id, .. } => {
+                assert_eq!(import_id, "/subscriptions/x/subnets/snet-container");
+            }
+            other => panic!("expected Azurerm, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn nsg_association_siblings_grouped_together() {
+        let output = r#"Error: an association between "/subscriptions/x/subnets/snet-host" and "/subscriptions/x/nsg/nsg-1" already exists
+  with module.hub[0].module.hub_network.azurerm_subnet_network_security_group_association.workspace_subnets["host"],
+  on subnets.tf line 25
+
+Error: an association between "/subscriptions/x/subnets/snet-container" and "/subscriptions/x/nsg/nsg-1" already exists
+  with module.hub[0].module.hub_network.azurerm_subnet_network_security_group_association.workspace_subnets["container"],
+  on subnets.tf line 25
+"#;
+        let results = parse_importable_errors(output);
+        assert_eq!(results.len(), 2);
+
+        let (sibling_groups, standalone) = group_for_each_siblings(&results);
+        assert_eq!(sibling_groups.len(), 1);
+        assert!(standalone.is_empty());
+        assert_eq!(sibling_groups[0].len(), 2);
+    }
+
+    // ── resolve_import_pair: AzureRoleAssignment ────────────────────────
+
+    #[test]
+    fn resolve_import_pair_role_assignment_returns_none() {
+        let resource = ImportableResource::AzureRoleAssignment {
+            tf_address: "azurerm_role_assignment.uc_storage_access[0]".to_string(),
+        };
+        assert!(resolve_import_pair(&resource, &None).is_none());
+        assert!(resolve_import_pair(&resource, &Some("ncc-123".to_string())).is_none());
+    }
+
     // ── read_tfvar ──────────────────────────────────────────────────────
 
     #[test]
@@ -1674,6 +2242,153 @@ Error: cannot create mws ncc private endpoint rule: already exists under rule aa
 
         assert_eq!(env.get("ARM_TENANT_ID"), Some(&"tid".to_string()));
         assert_eq!(env.get("AWS_PROFILE"), Some(&"my-prof".to_string()));
+    }
+
+    // ── tf_address helper ─────────────────────────────────────────────
+
+    #[test]
+    fn tf_address_returns_address_for_all_variants() {
+        let azurerm = ImportableResource::Azurerm {
+            tf_address: "azurerm_subnet.main".into(),
+            import_id: "/subs/123".into(),
+        };
+        assert_eq!(azurerm.tf_address(), "azurerm_subnet.main");
+
+        let pe = ImportableResource::DatabricksPeRule {
+            tf_address: "databricks_pe.rule".into(),
+            rule_id: "rule-1".into(),
+        };
+        assert_eq!(pe.tf_address(), "databricks_pe.rule");
+
+        let generic = ImportableResource::DatabricksGeneric {
+            tf_address: "databricks_network_policy.this".into(),
+            import_id: "p-1".into(),
+        };
+        assert_eq!(generic.tf_address(), "databricks_network_policy.this");
+
+        let role = ImportableResource::AzureRoleAssignment {
+            tf_address: "azurerm_role_assignment.uc[0]".into(),
+        };
+        assert_eq!(role.tf_address(), "azurerm_role_assignment.uc[0]");
+    }
+
+    // ── group_for_each_siblings ───────────────────────────────────────
+
+    #[test]
+    fn group_for_each_siblings_groups_map_keyed_resources() {
+        let resources = vec![
+            ImportableResource::Azurerm {
+                tf_address: r#"module.hub[0].azurerm_subnet.workspace_subnets["host"]"#.into(),
+                import_id: "/subs/host".into(),
+            },
+            ImportableResource::Azurerm {
+                tf_address: r#"module.hub[0].azurerm_subnet.workspace_subnets["container"]"#.into(),
+                import_id: "/subs/container".into(),
+            },
+        ];
+
+        let (siblings, standalone) = group_for_each_siblings(&resources);
+        assert_eq!(siblings.len(), 1);
+        assert_eq!(siblings[0].len(), 2);
+        assert!(standalone.is_empty());
+    }
+
+    #[test]
+    fn group_for_each_siblings_does_not_group_count_indexes() {
+        let resources = vec![
+            ImportableResource::Azurerm {
+                tf_address: "module.hub[0].azurerm_resource_group.rg".into(),
+                import_id: "/subs/rg0".into(),
+            },
+            ImportableResource::Azurerm {
+                tf_address: "module.hub[1].azurerm_resource_group.rg".into(),
+                import_id: "/subs/rg1".into(),
+            },
+        ];
+
+        let (siblings, standalone) = group_for_each_siblings(&resources);
+        assert!(siblings.is_empty());
+        assert_eq!(standalone.len(), 2);
+    }
+
+    #[test]
+    fn group_for_each_siblings_mixed() {
+        let resources = vec![
+            ImportableResource::Azurerm {
+                tf_address: r#"azurerm_subnet.sn["a"]"#.into(),
+                import_id: "/subs/a".into(),
+            },
+            ImportableResource::Azurerm {
+                tf_address: r#"azurerm_subnet.sn["b"]"#.into(),
+                import_id: "/subs/b".into(),
+            },
+            ImportableResource::Azurerm {
+                tf_address: "azurerm_resource_group.rg".into(),
+                import_id: "/subs/rg".into(),
+            },
+        ];
+
+        let (siblings, standalone) = group_for_each_siblings(&resources);
+        assert_eq!(siblings.len(), 1);
+        assert_eq!(siblings[0].len(), 2);
+        assert_eq!(standalone.len(), 1);
+        assert_eq!(standalone[0].tf_address(), "azurerm_resource_group.rg");
+    }
+
+    #[test]
+    fn group_for_each_siblings_single_for_each_goes_standalone() {
+        let resources = vec![ImportableResource::Azurerm {
+            tf_address: r#"azurerm_subnet.sn["only_one"]"#.into(),
+            import_id: "/subs/only".into(),
+        }];
+
+        let (siblings, standalone) = group_for_each_siblings(&resources);
+        assert!(siblings.is_empty());
+        assert_eq!(standalone.len(), 1);
+    }
+
+    // ── write_import_blocks ───────────────────────────────────────────
+
+    #[test]
+    fn write_import_blocks_creates_valid_hcl() {
+        let dir = tempfile::tempdir().unwrap();
+        let pairs = vec![
+            (
+                r#"module.hub[0].azurerm_subnet.workspace_subnets["host"]"#.to_string(),
+                "/subs/host-id".to_string(),
+            ),
+            (
+                r#"module.hub[0].azurerm_subnet.workspace_subnets["container"]"#.to_string(),
+                "/subs/container-id".to_string(),
+            ),
+        ];
+
+        let path = write_import_blocks(&pairs, dir.path()).unwrap();
+        assert!(path.exists());
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains(r#"to = module.hub[0].azurerm_subnet.workspace_subnets["host"]"#));
+        assert!(content.contains(r#"id = "/subs/host-id""#));
+        assert!(content.contains(r#"to = module.hub[0].azurerm_subnet.workspace_subnets["container"]"#));
+        assert!(content.contains(r#"id = "/subs/container-id""#));
+        assert_eq!(content.matches("import {").count(), 2);
+    }
+
+    #[test]
+    fn cleanup_import_file_removes_temp_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(AUTO_IMPORT_FILENAME);
+        fs::write(&path, "import {}").unwrap();
+        assert!(path.exists());
+
+        cleanup_import_file(dir.path());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn cleanup_import_file_noop_when_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        cleanup_import_file(dir.path());
     }
 }
 

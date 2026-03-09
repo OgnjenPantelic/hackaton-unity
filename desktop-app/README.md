@@ -16,7 +16,7 @@ Desktop app for deploying Databricks workspaces on AWS, Azure, and GCP using Ter
 - Azure identity for Databricks (no service principal needed with Azure CLI + Account Admin)
 - GCP service account creation with custom IAM role and impersonation setup
 - Cloud-specific permission validation before deployment
-- Auto-import and retry when Terraform hits "resource already exists" errors (Azure resource groups, Databricks network policies, Private Endpoint rules)
+- Auto-import and retry when Terraform hits "resource already exists" errors (Azure resource groups, Azure role assignments, Databricks network policies, Private Endpoint rules)
 - Resource name conflict detection for Azure — warns before deployment if resource groups already exist
 - Real-time resource timeline during deployment showing creation/destruction progress per resource
 - Rollback support (terraform destroy with resource cleanup)
@@ -324,6 +324,7 @@ src/
       AuthModeSelector.tsx    # Radio-button auth mode selector
       AzureAdminDialog.tsx    # Azure admin consent flow dialog
       FormGroup.tsx           # FormGroup and collapsible FormSection
+      LinkifyText.tsx         # Auto-linkify URLs in help text
       LoadingSpinner.tsx      # Spinner and LoadingOverlay
       PermissionWarningDialog.tsx  # Cloud permission warnings
     screens/

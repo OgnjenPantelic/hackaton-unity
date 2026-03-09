@@ -9,7 +9,7 @@ function isValidJson(s: string): boolean {
 /**
  * Canonical section order for the configuration form.
  */
-export const SECTION_ORDER = ["Workspace", "Hub Infrastructure", "Workspace Network", "Firewall Rules", "Encryption", "Advanced: Network Configuration", "Security & Compliance", "Metastore & Catalog", "Optional Settings", "Tags"];
+export const SECTION_ORDER = ["Workspace", "Hub Infrastructure", "Workspace Network", "Firewall Rules", "Encryption", "Advanced: Network Configuration", "Security & Compliance", "Metastore & Catalog", "Additional Settings", "Tags"];
 
 /**
  * Field display order within each section (lower number = displayed first).
@@ -223,7 +223,7 @@ export function groupVariablesBySection(
     use_existing_pas: "Advanced: Network Configuration",
     existing_pas_id: "Advanced: Network Configuration",
     // SRA: GCP metastore
-    regional_metastore_id: "Optional Settings",
+    regional_metastore_id: "Additional Settings",
 
     // Security & Compliance
     enable_compliance_security_profile: "Security & Compliance",
@@ -241,13 +241,13 @@ export function groupVariablesBySection(
     existing_metastore_id: "Metastore & Catalog",
     uc_catalog_name: "Metastore & Catalog",
 
-    // Optional Settings
-    audit_log_delivery_exists: "Optional Settings",
-    deployment_name: "Optional Settings",
-    ip_addresses: "Optional Settings",
-    account_console_url: "Optional Settings",
-    sat_configuration: "Optional Settings",
-    sat_service_principal: "Optional Settings",
+    // Additional Settings
+    audit_log_delivery_exists: "Additional Settings",
+    deployment_name: "Additional Settings",
+    ip_addresses: "Additional Settings",
+    account_console_url: "Additional Settings",
+    sat_configuration: "Additional Settings",
+    sat_service_principal: "Additional Settings",
   };
 
   // Azure SRA: split the mega network section into focused sub-sections

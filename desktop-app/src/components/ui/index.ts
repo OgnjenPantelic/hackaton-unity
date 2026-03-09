@@ -5,3 +5,4 @@ export { FormGroup, FormSection } from "./FormGroup";
 export { Alert, StatusMessage } from "./Alert";
 export { ErrorBoundary } from "./ErrorBoundary";
 export { PasswordInput } from "./PasswordInput";
+export { LinkifyText } from "./LinkifyText";

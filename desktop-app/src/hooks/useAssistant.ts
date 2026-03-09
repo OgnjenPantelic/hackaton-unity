@@ -127,6 +127,7 @@ export function useAssistant(): UseAssistantReturn {
 
       const reply = await invoke<string>("assistant_chat", {
         message: text,
+        screen,
         screenContext,
         stateMetadata,
         history: historySlice,

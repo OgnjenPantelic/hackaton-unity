@@ -1,8 +1,6 @@
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AwsProfile, AwsIdentity, CloudCredentials, CloudPermissionCheck } from "../types";
-import { POLLING } from "../constants";
-import { useSsoPolling } from "./useSsoPolling";
 
 export interface UseAwsAuthReturn {
   // State
@@ -42,8 +40,6 @@ export function useAwsAuth(): UseAwsAuthReturn {
   const [error, setError] = useState<string | null>(null);
   const [permissionCheck, setPermissionCheck] = useState<CloudPermissionCheck | null>(null);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
-
-  const { startPolling, clearSsoPolling, isMountedRef, setMounted } = useSsoPolling();
 
   const clearError = useCallback(() => {
     setError(null);
@@ -95,43 +91,28 @@ export function useAwsAuth(): UseAwsAuthReturn {
       setLoading(true);
       setLoginInProgress(true);
       setError(null);
-      clearSsoPolling();
 
       try {
         await invoke("aws_sso_login", { profile });
-
         setLoginInProgress(false);
-        startPolling(
-          async () => {
-            const id = await invoke<AwsIdentity>("get_aws_identity", { profile });
-            if (isMountedRef.current) {
-              setIdentity(id);
-              setLoading(false);
-            }
-            return true;
-          },
-          () => {
-            // Success handled in checkFn
-          },
-          () => {
-            setError("SSO authentication timed out. Please try again.");
-            setLoading(false);
-          },
-          {
-            interval: POLLING.SSO_CHECK_INTERVAL,
-            maxAttempts: POLLING.SSO_MAX_ATTEMPTS,
-          }
-        );
+
+        try {
+          const id = await invoke<AwsIdentity>("get_aws_identity", { profile });
+          setIdentity(id);
+        } catch (e: unknown) {
+          setError(`SSO login succeeded but identity check failed: ${String(e)}`);
+        }
       } catch (e: unknown) {
         const msg = String(e);
         if (msg !== "LOGIN_CANCELLED") {
           setError(msg);
         }
         setLoginInProgress(false);
+      } finally {
         setLoading(false);
       }
     },
-    [clearSsoPolling, startPolling, isMountedRef]
+    []
   );
 
   const cancelSsoLogin = useCallback(async () => {
@@ -141,8 +122,8 @@ export function useAwsAuth(): UseAwsAuthReturn {
       // Best-effort cancellation
     }
     setLoginInProgress(false);
-    clearSsoPolling();
-  }, [clearSsoPolling]);
+    setLoading(false);
+  }, []);
 
   const checkPermissions = useCallback(
     async (credentials: CloudCredentials): Promise<CloudPermissionCheck> => {
@@ -171,9 +152,8 @@ export function useAwsAuth(): UseAwsAuthReturn {
   );
 
   const cleanup = useCallback(() => {
-    setMounted(false);
-    clearSsoPolling();
-  }, [setMounted, clearSsoPolling]);
+    // No-op: retained for interface compatibility
+  }, []);
 
   return {
     profiles,

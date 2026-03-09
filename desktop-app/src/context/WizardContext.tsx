@@ -42,6 +42,7 @@ export interface WizardContextValue {
   selectedCloud: string;
   loadingCloud: string | null;
   selectCloud: (cloud: string) => void;
+  cancelCloudSelection: () => void;
 
   // Dependencies
   dependencies: Record<string, DependencyStatus>;
@@ -142,12 +143,15 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   const [variables, setVariables] = useState<TerraformVariable[]>([]);
   const [formValues, setFormValues] = useState<Record<string, any>>({});
   const [credentials, setCredentials] = useState<CloudCredentials>({});
+  const credentialsRef = useRef(credentials);
+  credentialsRef.current = credentials;
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [installingTerraform, setInstallingTerraform] = useState(false);
   const [loadingCloud, setLoadingCloud] = useState<string | null>(null);
   const [loadingTemplate, setLoadingTemplate] = useState<string | null>(null);
   const templateRequestRef = useRef<string | null>(null);
+  const cloudRequestRef = useRef<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [formSubmitAttempted, setFormSubmitAttempted] = useState(false);
   const [tagPairs, setTagPairs] = useState<{ key: string; value: string }[]>([]);
@@ -231,6 +235,8 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   };
 
   const selectCloud = (cloud: string) => {
+    const requestId = cloud + Date.now();
+    cloudRequestRef.current = requestId;
     setLoadingCloud(cloud);
     setSelectedCloud(cloud);
     
@@ -281,9 +287,16 @@ export function WizardProvider({ children }: { children: ReactNode }) {
         checkDependencies(),
         new Promise((resolve) => setTimeout(resolve, POLLING.MIN_LOADING_TIME)),
       ]);
+      if (cloudRequestRef.current !== requestId) return;
       setLoadingCloud(null);
       setScreen("dependencies");
     }, UI.REACT_PAINT_DELAY);
+  };
+
+  const cancelCloudSelection = () => {
+    cloudRequestRef.current = null;
+    setLoadingCloud(null);
+    setSelectedCloud("");
   };
 
   const selectTemplate = async (template: Template) => {
@@ -403,14 +416,20 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // -- AWS wrappers ---------------------------------------------------------
-  const loadAwsProfiles = async () => {
+  const loadAwsProfiles = useCallback(async () => {
     const profiles = await aws.loadProfiles();
-    if (profiles.length > 0 && !credentials.aws_profile) {
-      const defaultProfile = profiles.find((p) => p.name === "default") || profiles[0];
-      setCredentials((prev) => ({ ...prev, aws_profile: defaultProfile.name }));
-      aws.checkIdentity(defaultProfile.name);
+    if (profiles.length > 0) {
+      const currentProfile = credentialsRef.current.aws_profile;
+      const stillExists = currentProfile && profiles.some((p) => p.name === currentProfile);
+      const activeProfile = stillExists
+        ? currentProfile
+        : (profiles.find((p) => p.name === "default") || profiles[0]).name;
+      if (activeProfile !== credentialsRef.current.aws_profile) {
+        setCredentials((prev) => ({ ...prev, aws_profile: activeProfile }));
+      }
+      aws.checkIdentity(activeProfile);
     }
-  };
+  }, [aws, setCredentials]);
 
   const handleAwsProfileChange = (profile: string) => {
     aws.handleProfileChange(profile, setCredentials);
@@ -507,6 +526,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
         break;
       case "databricks-credentials":
         if (selectedCloud === CLOUDS.AWS) {
+          loadAwsProfiles();
           setScreen("aws-credentials");
         } else if (selectedCloud === CLOUDS.AZURE) {
           setScreen("azure-credentials");
@@ -530,8 +550,6 @@ export function WizardProvider({ children }: { children: ReactNode }) {
         if (!deployment.deploymentStatus?.running) {
           setScreen("unity-catalog-config");
           deployment.setDeploymentStep("ready");
-          deployment.setDeploymentName("");
-          deployment.setTemplatePath("");
         }
         break;
     }
@@ -632,7 +650,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   // -- Context value construction -------------------------------------------
   const value: WizardContextValue = {
     screen, setScreen, goBack,
-    selectedCloud, loadingCloud, selectCloud,
+    selectedCloud, loadingCloud, selectCloud, cancelCloudSelection,
     dependencies, installingTerraform, installTerraform, recheckDependencies: checkDependencies, continueFromDependencies,
     templates, selectedTemplate, loadingTemplate, selectTemplate,
     credentials, setCredentials,

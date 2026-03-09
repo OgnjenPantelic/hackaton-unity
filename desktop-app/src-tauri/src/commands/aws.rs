@@ -40,25 +40,39 @@ pub fn get_aws_profiles() -> Vec<AwsProfile> {
         let config_path = home.join(".aws").join("config");
         if config_path.exists() {
             if let Ok(content) = fs::read_to_string(&config_path) {
+                let mut current_name: Option<String> = None;
+                let mut profile_sso: std::collections::HashMap<String, bool> =
+                    std::collections::HashMap::new();
+
                 for line in content.lines() {
                     let line = line.trim();
                     if line.starts_with('[') && line.ends_with(']') {
                         let section = &line[1..line.len() - 1];
+                        if section.starts_with("sso-session ") {
+                            current_name = None;
+                            continue;
+                        }
                         let name = if section.starts_with("profile ") {
                             section.strip_prefix("profile ").unwrap().to_string()
                         } else {
                             section.to_string()
                         };
-                        if !seen.contains(&name) {
-                            let is_sso = content.contains(&format!("[profile {}]", name))
-                                && content.contains("sso_start_url")
-                                || (name == "default" && content.contains("sso_start_url"));
-                            profiles.push(AwsProfile {
-                                name: name.clone(),
-                                is_sso,
-                            });
-                            seen.insert(name);
+                        profile_sso.entry(name.clone()).or_insert(false);
+                        current_name = Some(name);
+                    } else if let Some(ref name) = current_name {
+                        if line.starts_with("sso_start_url") || line.starts_with("sso_session") {
+                            profile_sso.insert(name.clone(), true);
                         }
+                    }
+                }
+
+                for (name, is_sso) in &profile_sso {
+                    if !seen.contains(name) {
+                        profiles.push(AwsProfile {
+                            name: name.clone(),
+                            is_sso: *is_sso,
+                        });
+                        seen.insert(name.clone());
                     }
                 }
             }
@@ -101,7 +115,7 @@ pub fn get_aws_profiles() -> Vec<AwsProfile> {
 
 /// Get AWS identity for a profile using `aws sts get-caller-identity`.
 #[tauri::command]
-pub fn get_aws_identity(profile: String) -> Result<AwsIdentity, String> {
+pub async fn get_aws_identity(profile: String) -> Result<AwsIdentity, String> {
     use std::process::Command;
 
     if !profile.is_empty() && !validate_aws_profile_name(&profile) {
@@ -114,7 +128,7 @@ pub fn get_aws_identity(profile: String) -> Result<AwsIdentity, String> {
     let mut cmd = Command::new(&aws_path);
     cmd.args(["sts", "get-caller-identity", "--output", "json"]);
 
-    if !profile.is_empty() && profile != "default" {
+    if !profile.is_empty() {
         cmd.args(["--profile", &profile]);
     }
 
@@ -147,7 +161,6 @@ pub async fn aws_sso_login(profile: String) -> Result<String, String> {
     use super::CLI_LOGIN_PROCESS;
     use std::process::Command;
     use std::time::{Duration, Instant};
-    use std::thread;
 
     if !profile.is_empty() && !validate_aws_profile_name(&profile) {
         return Err("Invalid AWS profile name".to_string());
@@ -159,7 +172,7 @@ pub async fn aws_sso_login(profile: String) -> Result<String, String> {
     let mut cmd = Command::new(&aws_path);
     cmd.args(["sso", "login"]);
 
-    if !profile.is_empty() && profile != "default" {
+    if !profile.is_empty() {
         cmd.args(["--profile", &profile]);
     }
 
@@ -199,7 +212,7 @@ pub async fn aws_sso_login(profile: String) -> Result<String, String> {
                     let _ = child.kill();
                     break Err("SSO login timed out after 5 minutes. Please try again.".to_string());
                 }
-                thread::sleep(Duration::from_millis(500));
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
             Err(e) => break Err(format!("Error waiting for AWS CLI: {}", e)),
         }
@@ -210,6 +223,35 @@ pub async fn aws_sso_login(profile: String) -> Result<String, String> {
     }
 
     result
+}
+
+/// Apply AWS credentials from a `CloudCredentials` struct to a `Command` as env vars.
+/// Validates the profile name if present.
+fn apply_aws_credentials(cmd: &mut std::process::Command, credentials: &CloudCredentials) -> Result<(), String> {
+    if let Some(profile) = &credentials.aws_profile {
+        if !profile.is_empty() {
+            if !validate_aws_profile_name(profile) {
+                return Err("Invalid AWS profile name".to_string());
+            }
+            cmd.env("AWS_PROFILE", profile);
+        }
+    }
+    if let Some(key) = &credentials.aws_access_key_id {
+        if !key.is_empty() {
+            cmd.env("AWS_ACCESS_KEY_ID", key);
+        }
+    }
+    if let Some(secret) = &credentials.aws_secret_access_key {
+        if !secret.is_empty() {
+            cmd.env("AWS_SECRET_ACCESS_KEY", secret);
+        }
+    }
+    if let Some(token) = &credentials.aws_session_token {
+        if !token.is_empty() {
+            cmd.env("AWS_SESSION_TOKEN", token);
+        }
+    }
+    Ok(())
 }
 
 /// Check AWS IAM permissions using the IAM Policy Simulator.
@@ -259,27 +301,7 @@ pub async fn check_aws_permissions(
     // Get caller identity to obtain the ARN
     let mut identity_cmd = std::process::Command::new(&aws_cli);
     identity_cmd.args(["sts", "get-caller-identity", "--output", "json"]);
-
-    if let Some(profile) = &credentials.aws_profile {
-        if !profile.is_empty() {
-            identity_cmd.env("AWS_PROFILE", profile);
-        }
-    }
-    if let Some(key) = &credentials.aws_access_key_id {
-        if !key.is_empty() {
-            identity_cmd.env("AWS_ACCESS_KEY_ID", key);
-        }
-    }
-    if let Some(secret) = &credentials.aws_secret_access_key {
-        if !secret.is_empty() {
-            identity_cmd.env("AWS_SECRET_ACCESS_KEY", secret);
-        }
-    }
-    if let Some(token) = &credentials.aws_session_token {
-        if !token.is_empty() {
-            identity_cmd.env("AWS_SESSION_TOKEN", token);
-        }
-    }
+    apply_aws_credentials(&mut identity_cmd, &credentials)?;
 
     let identity_output = identity_cmd
         .output()
@@ -314,28 +336,7 @@ pub async fn check_aws_permissions(
         simulate_cmd.arg(action);
     }
     simulate_cmd.args(["--output", "json"]);
-
-    // Apply credentials again
-    if let Some(profile) = &credentials.aws_profile {
-        if !profile.is_empty() {
-            simulate_cmd.env("AWS_PROFILE", profile);
-        }
-    }
-    if let Some(key) = &credentials.aws_access_key_id {
-        if !key.is_empty() {
-            simulate_cmd.env("AWS_ACCESS_KEY_ID", key);
-        }
-    }
-    if let Some(secret) = &credentials.aws_secret_access_key {
-        if !secret.is_empty() {
-            simulate_cmd.env("AWS_SECRET_ACCESS_KEY", secret);
-        }
-    }
-    if let Some(token) = &credentials.aws_session_token {
-        if !token.is_empty() {
-            simulate_cmd.env("AWS_SESSION_TOKEN", token);
-        }
-    }
+    apply_aws_credentials(&mut simulate_cmd, &credentials)?;
 
     let simulate_output = simulate_cmd
         .output()
