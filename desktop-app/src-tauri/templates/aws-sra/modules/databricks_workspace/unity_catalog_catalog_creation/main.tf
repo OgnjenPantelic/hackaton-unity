@@ -9,6 +9,7 @@ resource "time_sleep" "wait_60_seconds" {
 locals {
   uc_iam_role        = "${var.resource_prefix}-catalog-${var.workspace_id}"
   uc_catalog_name_us = replace(var.uc_catalog_name, "-", "_")
+  uc_storage_name    = var.uc_storage_name != "" ? var.uc_storage_name : var.uc_catalog_name
 }
 
 # Unity Catalog KMS
@@ -75,7 +76,7 @@ data "databricks_aws_unity_catalog_assume_role_policy" "unity_catalog" {
 data "databricks_aws_unity_catalog_policy" "unity_catalog" {
   aws_account_id = var.aws_account_id
   aws_partition  = var.aws_assume_partition
-  bucket_name    = var.uc_catalog_name
+  bucket_name    = local.uc_storage_name
   role_name      = local.uc_iam_role
   kms_name       = aws_kms_alias.catalog_storage_key_alias.arn
 }
@@ -105,10 +106,10 @@ resource "aws_iam_policy_attachment" "unity_catalog_attach" {
 
 # Unity Catalog S3
 resource "aws_s3_bucket" "unity_catalog_bucket" {
-  bucket        = var.uc_catalog_name
+  bucket        = local.uc_storage_name
   force_destroy = true
   tags = {
-    Name    = var.uc_catalog_name
+    Name    = local.uc_storage_name
     Project = var.resource_prefix
   }
 }
@@ -143,8 +144,8 @@ resource "aws_s3_bucket_public_access_block" "unity_catalog" {
 
 # External Location
 resource "databricks_external_location" "workspace_catalog_external_location" {
-  name            = "${var.uc_catalog_name}-external-location"
-  url             = "s3://${var.uc_catalog_name}/"
+  name            = "${local.uc_storage_name}-external-location"
+  url             = "s3://${local.uc_storage_name}/"
   credential_name = databricks_storage_credential.workspace_catalog_storage_credential.id
   comment         = "External location for catalog ${var.uc_catalog_name}"
   isolation_mode  = "ISOLATION_MODE_ISOLATED"
@@ -156,7 +157,7 @@ resource "databricks_catalog" "workspace_catalog" {
   name           = local.uc_catalog_name_us
   comment        = "This catalog is for workspace - ${var.workspace_id}"
   isolation_mode = "ISOLATED"
-  storage_root   = "s3://${var.uc_catalog_name}/"
+  storage_root   = "s3://${local.uc_storage_name}/"
   properties = {
     purpose = "Catalog for workspace - ${var.workspace_id}"
   }

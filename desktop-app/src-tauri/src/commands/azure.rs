@@ -197,12 +197,12 @@ pub fn set_azure_subscription(subscription_id: String) -> Result<(), String> {
 
 /// List Azure resource groups using `az group list`.
 #[tauri::command]
-pub fn get_azure_resource_groups() -> Result<Vec<AzureResourceGroup>, String> {
+pub fn get_azure_resource_groups(subscription_id: String) -> Result<Vec<AzureResourceGroup>, String> {
     let az_path = dependencies::find_azure_cli_path()
         .ok_or_else(|| crate::errors::cli_not_found("Azure CLI"))?;
 
     let output = super::silent_cmd(&az_path)
-        .args(["group", "list", "--output", "json"])
+        .args(["group", "list", "--subscription", &subscription_id, "--output", "json"])
         .output()
         .map_err(|e| format!("Failed to run Azure CLI: {}", e))?;
 
@@ -219,7 +219,7 @@ pub fn get_azure_resource_groups() -> Result<Vec<AzureResourceGroup>, String> {
         .map_err(|e| format!("Failed to parse resource groups: {}", e))?;
 
     let empty = vec![];
-    let groups: Vec<AzureResourceGroup> = json
+    let mut groups: Vec<AzureResourceGroup> = json
         .as_array()
         .unwrap_or(&empty)
         .iter()
@@ -228,6 +228,8 @@ pub fn get_azure_resource_groups() -> Result<Vec<AzureResourceGroup>, String> {
             location: rg["location"].as_str().unwrap_or("").to_string(),
         })
         .collect();
+
+    groups.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     Ok(groups)
 }
@@ -327,7 +329,7 @@ pub async fn get_azure_resource_groups_sp(
         .map_err(|e| format!("Failed to parse resource groups response: {}", e))?;
 
     let empty = vec![];
-    let groups: Vec<AzureResourceGroup> = rg_json["value"]
+    let mut groups: Vec<AzureResourceGroup> = rg_json["value"]
         .as_array()
         .unwrap_or(&empty)
         .iter()
@@ -336,6 +338,8 @@ pub async fn get_azure_resource_groups_sp(
             location: rg["location"].as_str().unwrap_or("").to_string(),
         })
         .collect();
+
+    groups.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     Ok(groups)
 }
@@ -349,14 +353,14 @@ pub struct AzureVnet {
     pub address_prefixes: Vec<String>,
 }
 
-/// List Azure VNets in the current subscription using `az network vnet list`.
+/// List Azure VNets in the specified subscription using `az network vnet list`.
 #[tauri::command]
-pub fn get_azure_vnets() -> Result<Vec<AzureVnet>, String> {
+pub fn get_azure_vnets(subscription_id: String) -> Result<Vec<AzureVnet>, String> {
     let az_path = dependencies::find_azure_cli_path()
         .ok_or_else(|| crate::errors::cli_not_found("Azure CLI"))?;
 
     let output = super::silent_cmd(&az_path)
-        .args(["network", "vnet", "list", "--output", "json"])
+        .args(["network", "vnet", "list", "--subscription", &subscription_id, "--output", "json"])
         .output()
         .map_err(|e| format!("Failed to run Azure CLI: {}", e))?;
 
@@ -518,20 +522,22 @@ pub async fn get_azure_vnets_sp(
 pub struct ResourceNameConflict {
     pub name: String,
     pub resource_type: String,
-    /// True when the existing resource carries the deployer tag, meaning it was
-    /// created by a previous run of this tool and is safe to re-use.
+    /// True when the existing resource carries the deployer tag.
     pub has_deployer_tag: bool,
+    /// The value of the deployer tag, if present (e.g. "azure_simple_k2m9x1").
+    pub deployer_tag_value: Option<String>,
 }
 
 const DEPLOYER_TAG_KEY: &str = "databricks_deployer_template";
 
-fn rg_has_deployer_tag(json: &serde_json::Value) -> bool {
-    json["tags"][DEPLOYER_TAG_KEY].is_string()
+fn rg_deployer_tag_value(json: &serde_json::Value) -> Option<String> {
+    json["tags"][DEPLOYER_TAG_KEY].as_str().map(String::from)
 }
 
 /// Check if Azure resource group names already exist using `az group show`.
 #[tauri::command]
 pub fn check_resource_names_available(
+    subscription_id: String,
     names: Vec<String>,
 ) -> Result<Vec<ResourceNameConflict>, String> {
     let az_path = dependencies::find_azure_cli_path()
@@ -541,17 +547,18 @@ pub fn check_resource_names_available(
 
     for name in &names {
         let output = super::silent_cmd(&az_path)
-            .args(["group", "show", "-n", name, "--output", "json"])
+            .args(["group", "show", "-n", name, "--subscription", &subscription_id, "--output", "json"])
             .output()
             .map_err(|e| format!("Failed to run Azure CLI: {}", e))?;
-
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let json: serde_json::Value = serde_json::from_str(&stdout).unwrap_or_default();
+            let tag_value = rg_deployer_tag_value(&json);
             conflicts.push(ResourceNameConflict {
                 name: name.clone(),
                 resource_type: "resource group".to_string(),
-                has_deployer_tag: rg_has_deployer_tag(&json),
+                has_deployer_tag: tag_value.is_some(),
+                deployer_tag_value: tag_value,
             });
         }
     }
@@ -646,10 +653,12 @@ pub async fn check_resource_names_available_sp(
                 .json()
                 .await
                 .unwrap_or_default();
+            let tag_value = rg_deployer_tag_value(&rg_json);
             conflicts.push(ResourceNameConflict {
                 name: name.clone(),
                 resource_type: "resource group".to_string(),
-                has_deployer_tag: rg_has_deployer_tag(&rg_json),
+                has_deployer_tag: tag_value.is_some(),
+                deployer_tag_value: tag_value,
             });
         }
     }

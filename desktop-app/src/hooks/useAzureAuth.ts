@@ -24,7 +24,7 @@ export interface UseAzureAuthReturn {
   loadAccount: () => Promise<AzureAccount | null>;
   loadSubscriptions: () => Promise<void>;
   loadResourceGroups: (subscriptionId: string, credentials?: CloudCredentials) => Promise<void>;
-  loadVnets: (credentials?: CloudCredentials) => Promise<void>;
+  loadVnets: (subscriptionId: string, credentials?: CloudCredentials) => Promise<void>;
   handleAzureLogin: () => Promise<void>;
   cancelLogin: () => Promise<void>;
   handleSubscriptionChange: (
@@ -74,7 +74,6 @@ export function useAzureAuth(): UseAzureAuthReturn {
   }, []);
 
   const loadResourceGroups = useCallback(async (subscriptionId: string, credentials?: CloudCredentials) => {
-    // Check if we already have cached results for this subscription
     if (resourceGroupsCacheKey === subscriptionId && resourceGroups.length > 0) {
       return;
     }
@@ -82,7 +81,6 @@ export function useAzureAuth(): UseAzureAuthReturn {
     try {
       let groups: { name: string; location: string }[];
 
-      // Use SP REST API when in service_principal mode and credentials are provided
       if (authMode === "service_principal" && credentials?.azure_client_id && credentials?.azure_client_secret) {
         groups = await invoke<{ name: string; location: string }[]>("get_azure_resource_groups_sp", {
           credentials,
@@ -95,23 +93,25 @@ export function useAzureAuth(): UseAzureAuthReturn {
 
       setResourceGroups(groups);
       setResourceGroupsCacheKey(subscriptionId);
-    } catch {
+    } catch (e) {
+      console.warn("Failed to load resource groups:", e);
       setResourceGroups([]);
     }
   }, [resourceGroupsCacheKey, resourceGroups.length, authMode]);
 
-  const loadVnets = useCallback(async (credentials?: CloudCredentials) => {
+  const loadVnets = useCallback(async (subscriptionId: string, credentials?: CloudCredentials) => {
     try {
       let vnetList: AzureVnet[];
 
       if (authMode === "service_principal" && credentials?.azure_client_id && credentials?.azure_client_secret) {
         vnetList = await invoke<AzureVnet[]>("get_azure_vnets_sp", { credentials });
       } else {
-        vnetList = await invoke<AzureVnet[]>("get_azure_vnets");
+        vnetList = await invoke<AzureVnet[]>("get_azure_vnets", { subscriptionId });
       }
 
       setVnets(vnetList);
-    } catch {
+    } catch (e) {
+      console.warn("Failed to load VNets:", e);
       setVnets([]);
     }
   }, [authMode]);
@@ -169,10 +169,12 @@ export function useAzureAuth(): UseAzureAuthReturn {
               }
             : prev
         );
-        loadResourceGroups(subscriptionId);
+        setResourceGroups([]);
+        setResourceGroupsCacheKey("");
+        setVnets([]);
       }
     },
-    [loadResourceGroups]
+    []
   );
 
   const checkPermissions = useCallback(

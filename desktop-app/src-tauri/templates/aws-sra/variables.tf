@@ -160,9 +160,25 @@ variable "existing_metastore_id" {
 }
 
 variable "uc_catalog_name" {
-  description = "Name for the Unity Catalog workspace catalog and its S3 bucket. Leave empty to auto-generate from resource_prefix."
+  description = "Name for the Unity Catalog workspace catalog. Leave empty to auto-generate from resource_prefix."
   type        = string
   default     = ""
+}
+
+variable "uc_storage_name" {
+  description = "Name for the Unity Catalog S3 bucket. Leave empty to use uc_catalog_name."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.uc_storage_name == "" || (length(var.uc_storage_name) >= 3 && length(var.uc_storage_name) <= 63)
+    error_message = "uc_storage_name must be between 3 and 63 characters when provided."
+  }
+
+  validation {
+    condition     = var.uc_storage_name == "" || can(regex("^[a-z0-9][a-z0-9.-]*[a-z0-9]$", var.uc_storage_name))
+    error_message = "uc_storage_name must start and end with lowercase letter or number, and contain only lowercase letters, numbers, hyphens, and periods."
+  }
 }
 
 variable "network_configuration" {

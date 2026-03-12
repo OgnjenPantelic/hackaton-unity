@@ -64,7 +64,7 @@ After successful deployment, initialize a git repo and optionally push to GitHub
 - "Databricks Account ID invalid": It's a UUID from Account Console, not the workspace URL.
 - "Permission denied" during deploy: Check permission warnings from credential screens. Click **"Go Back & Edit"** to fix credentials.
 - "Resource already exists": Previous deployment left resources. The app will automatically attempt to import the existing resources and retry the deployment. If auto-import fails, click **"Cleanup Resources"** or **"Delete Workspace & Resources"** to rollback, or clean up manually.
-- "Resource Name Conflict Detected" dialog on Configuration screen: Azure resource group names already exist in the subscription. Resources created by a previous deployer run (tagged with `databricks_deployer_template`) are allowed through automatically. For untagged conflicts choose **"Go Back"** to change the name or **"Continue Anyway"** to proceed.
+- "Resource Name Conflict Detected" dialog on Configuration screen: Azure resource group names already exist in the subscription. Resources tagged by the **same** deployer run (matching `databricks_deployer_template` tag value) are allowed through automatically. Resources that are untagged or tagged by a **different** deployment are flagged — choose **"Go Back"** to change the name or **"Continue Anyway"** to proceed (Terraform will attempt to import them).
 - "Storage name already taken": S3 bucket and Azure Storage names must be globally unique. Click **"Go Back & Edit"** to change storage name.
 - "State lock" error: Another Terraform process may be running. Wait for it to finish or manually remove the lock file in the deployment directory.
 - "Provider authentication failed": Credentials may have expired. Go back to the credential screen and re-authenticate.
@@ -191,6 +191,7 @@ Creates: VPC with PrivateLink endpoints (backend REST + SCC relay), CMK encrypti
 ### Metastore & Catalog
 - **Existing Metastore ID** — ID of an existing metastore to use (leave empty to auto-detect or create).
 - **Catalog Name** — name for the workspace catalog (leave empty to auto-generate from resource prefix).
+- **Catalog Storage Name** — S3 bucket name for catalog storage (leave empty to use catalog name). Must be globally unique, 3-63 characters, lowercase letters, numbers, hyphens, and periods.
 
 ### Additional Settings
 - **Metastore Exists** — whether a metastore already exists in the region.

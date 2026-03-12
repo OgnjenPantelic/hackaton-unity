@@ -12,7 +12,7 @@ import {
   UCPermissionCheck,
 } from "../types";
 import { CLOUDS, POLLING, UI } from "../constants";
-import { initializeFormDefaults } from "../utils/variables";
+import { initializeFormDefaults, generateRandomSuffix } from "../utils/variables";
 import {
   useAwsAuth,
   useAzureAuth,
@@ -216,7 +216,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const loadAzureResourceGroups = async (_forceRefresh = false) => {
+  const loadAzureResourceGroups = async () => {
     const subscriptionId = credentials.azure_subscription_id || "";
     if (subscriptionId) {
       await azure.loadResourceGroups(subscriptionId, credentials);
@@ -224,7 +224,10 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   };
 
   const loadAzureVnets = async () => {
-    await azure.loadVnets(credentials);
+    const subscriptionId = credentials.azure_subscription_id || "";
+    if (subscriptionId) {
+      await azure.loadVnets(subscriptionId, credentials);
+    }
   };
 
   const installTerraform = async () => {
@@ -245,6 +248,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     cloudRequestRef.current = requestId;
     setLoadingCloud(cloud);
     setSelectedCloud(cloud);
+    deployment.setDeploymentName("");
     
     // Clear all cloud-specific credentials when switching clouds
     setCredentials(prev => {
@@ -316,6 +320,10 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     setFormSubmitAttempted(false);
 
+    if (!isSameTemplate) {
+      deployment.setDeploymentName("");
+    }
+
     setTimeout(async () => {
       try {
         const [vars] = await Promise.all([
@@ -334,7 +342,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
             azureUser: azure.account?.user,
             gcpAccount: gcp.validation?.account,
           });
-          const templateTagValue = template.id.replace(/-/g, "_");
+          const templateTagValue = `${template.id.replace(/-/g, "_")}_${generateRandomSuffix()}`;
           const defaultTag = { key: "databricks_deployer_template", value: templateTagValue };
           defaults.tags = JSON.stringify({ [defaultTag.key]: defaultTag.value });
           setFormValues(defaults);
@@ -480,16 +488,16 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   };
 
   const handleAzureSubscriptionChange = async (subscriptionId: string) => {
-    azure.handleSubscriptionChange(subscriptionId, azure.subscriptions, setCredentials);
-    // Reset permission warning state so user can re-validate with new subscription
-    setShowPermissionWarning(false);
-    setPermissionWarningAcknowledged(false);
-    azure.setPermissionCheck(null);
+    // Set CLI active subscription first so subsequent CLI commands target the right subscription
     try {
       await invoke("set_azure_subscription", { subscriptionId });
     } catch {
       // Subscription switch failed — user can retry
     }
+    azure.handleSubscriptionChange(subscriptionId, azure.subscriptions, setCredentials);
+    setShowPermissionWarning(false);
+    setPermissionWarningAcknowledged(false);
+    azure.setPermissionCheck(null);
   };
 
   // -- Deployment actions ---------------------------------------------------

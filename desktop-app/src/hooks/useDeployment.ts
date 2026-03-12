@@ -282,6 +282,9 @@ export function useDeployment(): UseDeploymentReturn {
           if (ucConfig.catalog_name) {
             values["uc_catalog_name"] = ucConfig.catalog_name;
           }
+          if (ucConfig.storage_name) {
+            values["uc_storage_name"] = ucConfig.storage_name;
+          }
         } else {
           values["create_unity_catalog"] = "true";
           if (ucConfig.catalog_name) {

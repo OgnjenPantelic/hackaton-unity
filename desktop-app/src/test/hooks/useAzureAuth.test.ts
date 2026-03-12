@@ -191,10 +191,7 @@ describe("useAzureAuth", () => {
   // handleSubscriptionChange
   // ---------------------------------------------------------------------------
   describe("handleSubscriptionChange", () => {
-    it("updates credentials with subscription and tenant ID", async () => {
-      // Mock the loadResourceGroups invoke
-      mockInvoke.mockResolvedValueOnce([]);
-
+    it("updates credentials with subscription and tenant ID and clears cache", async () => {
       const setCredentials = vi.fn();
       const subs: AzureSubscription[] = [
         { id: "s-1", name: "Sub 1", is_default: false, tenant_id: "t-1" },
@@ -212,6 +209,11 @@ describe("useAzureAuth", () => {
       const updated = updater({} as CloudCredentials);
       expect(updated.azure_subscription_id).toBe("s-2");
       expect(updated.azure_tenant_id).toBe("t-2");
+
+      // Cache should be cleared (no eager load)
+      expect(result.current.resourceGroups).toEqual([]);
+      expect(result.current.resourceGroupsCacheKey).toBe("");
+      expect(mockInvoke).not.toHaveBeenCalled();
     });
   });
 
@@ -341,10 +343,10 @@ describe("useAzureAuth", () => {
       const { result } = renderHook(() => useAzureAuth());
 
       await act(async () => {
-        await result.current.loadVnets();
+        await result.current.loadVnets("sub-123");
       });
 
-      expect(mockInvoke).toHaveBeenCalledWith("get_azure_vnets");
+      expect(mockInvoke).toHaveBeenCalledWith("get_azure_vnets", { subscriptionId: "sub-123" });
       expect(result.current.vnets).toEqual(vnets);
     });
 
@@ -367,7 +369,7 @@ describe("useAzureAuth", () => {
       };
 
       await act(async () => {
-        await result.current.loadVnets(spCreds);
+        await result.current.loadVnets("sub-456", spCreds);
       });
 
       expect(mockInvoke).toHaveBeenCalledWith("get_azure_vnets_sp", { credentials: spCreds });
@@ -380,7 +382,7 @@ describe("useAzureAuth", () => {
       const { result } = renderHook(() => useAzureAuth());
 
       await act(async () => {
-        await result.current.loadVnets();
+        await result.current.loadVnets("sub-123");
       });
 
       expect(result.current.vnets).toEqual([]);

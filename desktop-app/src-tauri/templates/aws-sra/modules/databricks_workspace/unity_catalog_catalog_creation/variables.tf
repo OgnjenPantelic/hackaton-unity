@@ -36,6 +36,12 @@ variable "uc_catalog_name" {
   type        = string
 }
 
+variable "uc_storage_name" {
+  description = "S3 bucket name for the Unity Catalog storage. Defaults to uc_catalog_name if not provided."
+  type        = string
+  default     = ""
+}
+
 variable "user_workspace_catalog_admin" {
   description = "Workspace catalog admin - same user as the account admin."
   type        = string

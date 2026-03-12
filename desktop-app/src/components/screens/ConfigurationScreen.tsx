@@ -28,6 +28,7 @@ interface ResourceNameConflict {
   name: string;
   resource_type: string;
   has_deployer_tag: boolean;
+  deployer_tag_value?: string;
 }
 
 const KNOWN_BOOLEANS = new Set([
@@ -142,12 +143,16 @@ export function ConfigurationScreen() {
               names: namesToCheck,
             })
           : await invoke<ResourceNameConflict[]>("check_resource_names_available", {
+              subscriptionId: credentials.azure_subscription_id || "",
               names: namesToCheck,
             });
 
-        const untagged = conflicts.filter(c => !c.has_deployer_tag);
-        if (untagged.length > 0) {
-          setResourceConflicts(untagged);
+        const currentTagValue = tagPairs.find(t => t.key === "databricks_deployer_template")?.value || "";
+        const dangerous = conflicts.filter(c =>
+          !c.deployer_tag_value || c.deployer_tag_value !== currentTagValue
+        );
+        if (dangerous.length > 0) {
+          setResourceConflicts(dangerous);
           setShowConflictDialog(true);
         } else {
           proceedAfterCheck();
@@ -159,7 +164,7 @@ export function ConfigurationScreen() {
         setCheckingNames(false);
       }
     }, 0);
-  }, [isAzureSra, isAzureSimple, formValues, credentials, selectedCloud, azure.authMode, proceedAfterCheck]);
+  }, [isAzureSra, isAzureSimple, formValues, credentials, selectedCloud, azure.authMode, tagPairs, proceedAfterCheck]);
   const onBack = goBack;
   
   const handleFormChange = (name: string, value: string | boolean | number | string[]) => {
@@ -1444,6 +1449,9 @@ export function ConfigurationScreen() {
                 </li>
               ))}
             </ul>
+            <p style={{ fontSize: "0.9em", color: "var(--text-muted)" }}>
+              If you continue, Terraform will attempt to import and manage these resources. This could modify or interfere with existing infrastructure.
+            </p>
             <div className="confirm-dialog-actions">
               <button className="btn btn-secondary" onClick={() => setShowConflictDialog(false)}>
                 Go Back

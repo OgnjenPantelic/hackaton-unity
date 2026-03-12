@@ -272,6 +272,8 @@ export function UnityCatalogConfigScreen() {
                   const raw = e.target.value;
                   const cleaned = selectedCloud === "gcp"
                     ? raw.toLowerCase().replace(/[^a-z0-9-]/g, "")
+                    : selectedCloud === "aws"
+                    ? raw.toLowerCase().replace(/[^a-z0-9.-]/g, "")
                     : raw.toLowerCase().replace(/[^a-z0-9]/g, "");
                   if (cleaned !== raw) {
                     setStorageFormatted(true);
@@ -283,7 +285,7 @@ export function UnityCatalogConfigScreen() {
               />
               <div className="help-text">
                 {selectedCloud === "aws" 
-                  ? "A new S3 bucket will be created for this catalog. Must be globally unique (3-63 characters)."
+                  ? "A new S3 bucket will be created for this catalog. Must be globally unique (3-63 characters, lowercase letters, numbers, hyphens, and periods)."
                   : selectedCloud === "gcp"
                   ? "A new GCS bucket will be created for this catalog. Must be globally unique (3-63 characters, lowercase letters, numbers, and hyphens)."
                   : "A new Storage Account will be created for this catalog. Must be globally unique (3-24 characters)."
