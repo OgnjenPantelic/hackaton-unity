@@ -11,7 +11,7 @@ Targeted review of uncommitted changes before committing. Each phase is scoped b
 
 ## Phase 1: Inventory
 
-Always runs first. From `workspace-creator/`:
+Always runs first. From the repo root:
 
 ```bash
 git diff --stat HEAD
@@ -70,7 +70,7 @@ Contains `SCREEN_CONTEXT`, `ASSISTANT_SAMPLE_QUESTIONS`, and `ASSISTANT_PROVIDER
 
 Each README has its own skip condition. Do not update READMEs that aren't affected by the diff.
 
-### 4a. `desktop-app/README.md`
+### 4a. `README.md` (repo root)
 
 **Skip if:** No new Tauri commands, no new user-facing features, no template variable changes.
 
@@ -80,16 +80,7 @@ Sections to verify against the diff:
 - Project Structure tree — new files or renamed modules
 - Troubleshooting — new error scenarios
 
-### 4b. `workspace-creator/README.md` (repo root)
-
-**Skip if:** No major additions (new commands, new screens, new templates).
-
-Sections to verify:
-- Opening description
-- Components table
-- Troubleshooting list
-
-### 4c. Template READMEs (`src-tauri/templates/*/README.md`)
+### 4b. Template READMEs (`src-tauri/templates/*/README.md`)
 
 **Skip if:** No `templates` files changed.
 
@@ -97,7 +88,7 @@ For each template whose `variables.tf` changed, verify the Variables table in it
 
 ## Phase 5: Cursor Rule and Skills
 
-### 5a. `.cursor/rules/desktop-app.md`
+### 5a. `.cursor/rules/`
 
 **Skip if:** No new commands registered in `lib.rs`, no new hooks created, no new constants exported, no new conventions introduced.
 

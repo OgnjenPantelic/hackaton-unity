@@ -1,20 +1,49 @@
-# OS
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+src-tauri/target/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
 .DS_Store
 Thumbs.db
 
-# IDE
-.idea/
-.vscode/
-*.swp
+# Terraform state (should not be committed)
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+
+# Sensitive files (never commit)
+*.pem
+*.key
+*.p12
+credentials.json
+
+# Backups
+*.bak
 *~
 
 # Logs
 *.log
+npm-debug.log*
+crash-*.log
 
-# Backups
-*.bak
+# Test coverage
+coverage/
 
-# Secrets
-.env
-*.pem
-*.key
+# Tauri dev artifacts
+src-tauri/WixTools/

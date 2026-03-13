@@ -310,6 +310,49 @@ describe("useUnityCatalog", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // softResetUcState
+  // ---------------------------------------------------------------------------
+  describe("softResetUcState", () => {
+    it("clears transient state but preserves ucConfig", async () => {
+      mockInvoke.mockResolvedValueOnce(permCheckWithMetastore);
+
+      const { result } = renderUnityCatalog();
+
+      // Set up: perform check, acknowledge, configure
+      await act(async () => {
+        await result.current.performUCPermissionCheck();
+      });
+      act(() => {
+        result.current.setUcPermissionAcknowledged(true);
+        result.current.setUcConfig({
+          enabled: true,
+          catalog_name: "my-catalog",
+          storage_name: "my-storage",
+          metastore_id: "meta-abc",
+        });
+      });
+
+      // Soft reset
+      act(() => {
+        result.current.softResetUcState();
+      });
+
+      // Transient state is cleared
+      expect(result.current.ucPermissionCheck).toBeNull();
+      expect(result.current.ucPermissionAcknowledged).toBe(false);
+      expect(result.current.ucCheckError).toBeNull();
+
+      // User-entered config is preserved
+      expect(result.current.ucConfig).toEqual({
+        enabled: true,
+        catalog_name: "my-catalog",
+        storage_name: "my-storage",
+        metastore_id: "meta-abc",
+      });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // setUcConfig
   // ---------------------------------------------------------------------------
   describe("setUcConfig", () => {

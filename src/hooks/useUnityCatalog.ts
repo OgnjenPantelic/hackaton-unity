@@ -17,6 +17,7 @@ export interface UseUnityCatalogReturn {
   refreshUCPermissions: () => void;
   generateStorageName: () => string;
   resetUcState: () => void;
+  softResetUcState: () => void;
 }
 
 export function useUnityCatalog(
@@ -89,12 +90,16 @@ export function useUnityCatalog(
     return `ucstore${suffix}`;
   }, []);
 
-  const resetUcState = useCallback(() => {
+  const softResetUcState = useCallback(() => {
     setUcPermissionCheck(null);
     setUcCheckError(null);
     setUcPermissionAcknowledged(false);
-    setUcConfig({ enabled: false, catalog_name: "", storage_name: "", metastore_id: "" });
   }, []);
+
+  const resetUcState = useCallback(() => {
+    softResetUcState();
+    setUcConfig({ enabled: false, catalog_name: "", storage_name: "", metastore_id: "" });
+  }, [softResetUcState]);
 
   return {
     ucConfig,
@@ -109,5 +114,6 @@ export function useUnityCatalog(
     refreshUCPermissions,
     generateStorageName,
     resetUcState,
+    softResetUcState,
   };
 }

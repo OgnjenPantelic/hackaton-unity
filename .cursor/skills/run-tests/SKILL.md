@@ -5,7 +5,7 @@ description: Run frontend and backend tests for the Databricks Deployer desktop 
 
 # Running Tests
 
-All commands run from the `desktop-app/` directory.
+All commands run from the repo root.
 
 ## Quick Reference
 

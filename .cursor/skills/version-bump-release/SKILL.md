@@ -20,8 +20,6 @@ Version is synced across three files via `scripts/sync-version.cjs`:
 
 ### Step 2: Bump the version
 
-From the `desktop-app/` directory:
-
 ```bash
 npm version patch --no-git-tag-version
 ```
@@ -30,12 +28,11 @@ npm version patch --no-git-tag-version
 
 This updates `package.json` and automatically runs `sync-version.cjs`, which copies the new version into `Cargo.toml` and `tauri.conf.json`.
 
-The `--no-git-tag-version` flag prevents npm from committing — we commit from the repo root instead.
+The `--no-git-tag-version` flag prevents npm from committing — we commit separately.
 
-### Step 3: Commit and tag from the repo root
+### Step 3: Commit and tag
 
 ```bash
-cd ..
 git add .
 git commit -m "v{NEW_VERSION}"
 git tag v{NEW_VERSION}
@@ -59,10 +56,10 @@ The `build-desktop.yml` workflow triggers on `v*` tags and:
 ## Checklist
 
 - [ ] Version bump type chosen (patch/minor/major)
-- [ ] `npm version {type} --no-git-tag-version` run from `desktop-app/`
+- [ ] `npm version {type} --no-git-tag-version` run from repo root
 - [ ] All three files have matching versions: `package.json`, `Cargo.toml`, `tauri.conf.json`
 - [ ] If templates changed: `TEMPLATES_VERSION` in `src-tauri/src/commands/mod.rs` was bumped separately
-- [ ] Committed from repo root with `v{VERSION}` message
+- [ ] Committed with `v{VERSION}` message
 - [ ] Tag created: `git tag v{VERSION}`
 - [ ] Pushed with `git push --follow-tags`
 - [ ] CI build passes on the tag

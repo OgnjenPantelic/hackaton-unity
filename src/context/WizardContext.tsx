@@ -170,7 +170,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
     ucPermissionCheck,
     ucPermissionAcknowledged, setUcPermissionAcknowledged,
     ucCheckLoading, ucCheckError,
-    refreshUCPermissions, generateStorageName, resetUcState,
+    refreshUCPermissions, generateStorageName, resetUcState, softResetUcState,
   } = useUnityCatalog(screen, selectedTemplate, formValues, credentials, selectedCloud);
 
   const aws = useAwsAuth();
@@ -565,7 +565,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
         break;
       case "unity-catalog-config":
         setScreen("configuration");
-        resetUcState();
+        softResetUcState();
         break;
       case "deployment":
         if (!deployment.deploymentStatus?.running) {

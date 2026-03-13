@@ -13,7 +13,7 @@ description: Run the Databricks Deployer desktop app locally for development. Us
 
 ## Setup
 
-From `desktop-app/`:
+From the repo root:
 
 ```bash
 npm install
