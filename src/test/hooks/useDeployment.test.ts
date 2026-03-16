@@ -15,6 +15,7 @@ const template: Template = {
   cloud: "azure",
   description: "Simple Azure workspace",
   features: ["vnet"],
+  github_url: "https://github.com/OgnjenPantelic/workspace-creator/tree/main/src-tauri/templates/azure-simple",
 };
 
 const credentials: CloudCredentials = {

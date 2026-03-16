@@ -29,16 +29,3 @@ resource "databricks_account_network_policy" "restrictive_network_policy" {
   }
 }
 
-resource "databricks_account_network_policy" "hub_policy" {
-  network_policy_id = "np-${var.resource_suffix}-hub"
-  account_id        = var.databricks_account_id
-  egress = {
-    network_access = {
-      restriction_mode              = "RESTRICTED_ACCESS"
-      allowed_internet_destinations = local.hub_internet_allowed_destinations
-      policy_enforcement = {
-        enforcement_mode = "ENFORCED"
-      }
-    }
-  }
-}

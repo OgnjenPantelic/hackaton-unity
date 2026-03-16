@@ -8,6 +8,9 @@ use crate::terraform;
 use std::fs;
 use tauri::{AppHandle, Manager};
 
+const GITHUB_TEMPLATES_BASE: &str =
+    "https://github.com/OgnjenPantelic/workspace-creator/tree/main/src-tauri/templates";
+
 /// Copy bundled templates into app-data on first run (or version change).
 pub fn setup_templates(app: &AppHandle) -> Result<(), String> {
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
@@ -131,6 +134,7 @@ pub fn get_templates(app: AppHandle) -> Result<Vec<Template>, String> {
                 "S3 bucket configuration".to_string(),
                 "Unity Catalog integration".to_string(),
             ],
+            github_url: format!("{}/aws-simple", GITHUB_TEMPLATES_BASE),
         });
     }
 
@@ -148,6 +152,7 @@ pub fn get_templates(app: AppHandle) -> Result<Vec<Template>, String> {
                 "Production-ready security".to_string(),
                 "Unity Catalog integration".to_string(),
             ],
+            github_url: format!("{}/azure-simple", GITHUB_TEMPLATES_BASE),
         });
     }
 
@@ -165,6 +170,7 @@ pub fn get_templates(app: AppHandle) -> Result<Vec<Template>, String> {
                 "Production-ready security".to_string(),
                 "Unity Catalog integration".to_string(),
             ],
+            github_url: format!("{}/gcp-simple", GITHUB_TEMPLATES_BASE),
         });
     }
 
@@ -184,6 +190,7 @@ pub fn get_templates(app: AppHandle) -> Result<Vec<Template>, String> {
                 "Audit log delivery".to_string(),
                 "Unity Catalog with isolated catalogs".to_string(),
             ],
+            github_url: format!("{}/aws-sra", GITHUB_TEMPLATES_BASE),
         });
     }
 
@@ -202,6 +209,7 @@ pub fn get_templates(app: AppHandle) -> Result<Vec<Template>, String> {
                 "Network Connectivity Configuration (NCC)".to_string(),
                 "Unity Catalog with isolated catalogs".to_string(),
             ],
+            github_url: format!("{}/azure-sra", GITHUB_TEMPLATES_BASE),
         });
     }
 
@@ -220,6 +228,7 @@ pub fn get_templates(app: AppHandle) -> Result<Vec<Template>, String> {
                 "Service account impersonation".to_string(),
                 "Modular workspace deployment".to_string(),
             ],
+            github_url: format!("{}/gcp-sra", GITHUB_TEMPLATES_BASE),
         });
     }
 

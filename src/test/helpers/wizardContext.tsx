@@ -56,6 +56,7 @@ function stubAzureAuth(overrides: Partial<UseAzureAuthReturn> = {}): UseAzureAut
     setPermissionCheck: vi.fn(),
     setCheckingPermissions: vi.fn(),
     loadAccount: vi.fn().mockResolvedValue(null),
+    refreshAccount: vi.fn().mockResolvedValue(null),
     loadSubscriptions: vi.fn().mockResolvedValue(undefined),
     loadResourceGroups: vi.fn().mockResolvedValue(undefined),
     loadVnets: vi.fn().mockResolvedValue(undefined),

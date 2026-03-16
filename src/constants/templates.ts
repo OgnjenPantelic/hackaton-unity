@@ -70,7 +70,7 @@ export const VARIABLE_DISPLAY_NAMES: Record<string, string> = {
   sg_egress_ports: "Security Group Egress Ports",
   cmk_admin_arn: "CMK Admin ARN",
   metastore_exists: "Metastore Already Exists",
-  audit_log_delivery_exists: "Audit Log Delivery Exists",
+  audit_log_delivery_exists: "Audit Log Delivery Already Configured",
   enable_compliance_security_profile: "Compliance Security Profile",
   compliance_standards: "Compliance Standards",
   enable_security_analysis_tool: "Security Analysis Tool (SAT)",
@@ -191,15 +191,15 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   sg_egress_ports: "Egress ports allowed in security groups. Pre-filled with Databricks defaults — modify only if needed.",
   cmk_admin_arn: "Optional. ARN of the IAM principal that will administer the CMK. Leave empty to skip.",
   metastore_exists: "Whether a Unity Catalog metastore already exists in this region.",
-  audit_log_delivery_exists: "Optional. Whether audit log delivery is already configured for this account.",
+  audit_log_delivery_exists: "Check if audit log delivery is already configured for this account. Leave unchecked to create it.",
   enable_compliance_security_profile: "⚠ IRREVERSIBLE — Once enabled, it cannot be removed. The only way to revert is to delete the workspace. Enables the paid Enhanced Security and Compliance add-on which adds a per-DBU surcharge to all compute. Contact your Databricks account team for exact pricing.",
   compliance_standards: "Compliance standards to apply (e.g. HIPAA, PCI-DSS). JSON array format.",
   enable_security_analysis_tool: "Optional. Enable the Security Analysis Tool (SAT) for security monitoring.",
   deployment_name: "Optional. Custom deployment name for the workspace. Must be pre-enabled by Databricks.",
   custom_vpc_id: "ID of your existing VPC.",
   custom_sg_id: "ID of your existing security group.",
-  custom_relay_vpce_id: "Optional. Existing Relay VPC Endpoint ID. Leave empty to create a new one.",
-  custom_workspace_vpce_id: "Optional. Existing Workspace VPC Endpoint ID. Leave empty to create a new one.",
+  custom_relay_vpce_id: "Existing Relay VPC Endpoint ID. Required in custom network mode.",
+  custom_workspace_vpce_id: "Existing Workspace VPC Endpoint ID. Required in custom network mode.",
 
   // --- SRA: GCP ---
   nodes_ip_cidr_range: "CIDR range for workspace nodes. Cannot be changed after creation.",
@@ -273,7 +273,6 @@ export const EXCLUDE_VARIABLES = [
   "subscription_id",
   "sat_force_destroy",
   "catalog_force_destroy",
-  "hub_allowed_urls",
   // SRA: AWS - hidden from form (requires Databricks rep pre-enablement)
   "deployment_name",
   // SRA: AWS - region-specific config maps with sensible defaults

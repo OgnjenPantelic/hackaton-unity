@@ -104,7 +104,7 @@ describe("WizardContext", () => {
 
     it("loads templates on mount", async () => {
       const templates: Template[] = [
-        { id: "aws-simple", name: "AWS Simple", cloud: "aws", description: "Simple", features: [] },
+        { id: "aws-simple", name: "AWS Simple", cloud: "aws", description: "Simple", features: [], github_url: "" },
       ];
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "get_templates") return templates;
@@ -509,6 +509,7 @@ describe("WizardContext", () => {
       cloud: "aws",
       description: "Simple deployment",
       features: ["vpc"],
+      github_url: "",
     };
 
     it("loads variables and navigates to configuration", async () => {
@@ -738,6 +739,7 @@ describe("WizardContext", () => {
         cloud: "aws",
         description: "test",
         features: [],
+        github_url: "",
       };
       mockInvoke.mockImplementation(async (cmd: string) => {
         if (cmd === "get_templates") return [template];

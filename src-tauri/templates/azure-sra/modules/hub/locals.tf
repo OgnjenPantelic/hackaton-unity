@@ -9,16 +9,6 @@ locals {
     }
   ]
 
-  # The hub_allowed_urls variable is used here to allow for hub to have a different allow list (primarily for SAT)
-  hub_internet_allowed_domains = [for dest in var.hub_allowed_urls : dest if !startswith(dest, "*.")]
-  hub_internet_allowed_destinations = [
-    for dest in local.hub_internet_allowed_domains :
-    {
-      destination               = trimprefix(dest, "*."),
-      internet_destination_type = "DNS_NAME"
-    }
-  ]
-
   # We use this to make sure that if we provision the 10th NCC in a region, that it does not cause subsequent terraform
   # plans/applies to fail due to the precondition on the NCC resource.
   ncc_name             = "ncc-${var.location}-${var.resource_suffix}"

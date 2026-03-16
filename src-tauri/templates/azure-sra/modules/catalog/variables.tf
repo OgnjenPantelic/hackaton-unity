@@ -16,7 +16,7 @@ variable "storage_container_name" {
 variable "storage_account_replication_type" {
   type        = string
   description = "(Optional) Replication type for the storage account"
-  default     = "GRS"
+  default     = "LRS"
 }
 
 # ----------------------------------------------------------------------------

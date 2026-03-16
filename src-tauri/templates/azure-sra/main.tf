@@ -24,7 +24,6 @@ module "hub" {
 
   # Account configuration
   databricks_account_id    = var.databricks_account_id
-  hub_allowed_urls         = var.hub_allowed_urls
   location                 = var.location
   public_repos             = var.allowed_fqdns
   resource_suffix          = var.hub_resource_suffix

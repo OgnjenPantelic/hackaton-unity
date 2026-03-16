@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useWizard } from "../../hooks/useWizard";
 
 export function UnityCatalogConfigScreen() {
@@ -42,10 +42,38 @@ export function UnityCatalogConfigScreen() {
   
   const metastoreExists = ucPermissionCheck?.metastore.exists;
 
+  const storageNameError = useMemo(() => {
+    if (!ucConfig.enabled) return null;
+    const val = ucConfig.storage_name.trim();
+    if (!val) return null;
+    if (selectedCloud === "azure") {
+      if (val.length < 3 || val.length > 24)
+        return "Must be between 3 and 24 characters.";
+      if (!/^[a-z0-9]+$/.test(val))
+        return "Only lowercase letters and numbers allowed.";
+    } else if (selectedCloud === "gcp") {
+      if (val.length < 3 || val.length > 63)
+        return "Must be between 3 and 63 characters.";
+      if (!/^[a-z0-9][a-z0-9-]*[a-z0-9]$/.test(val) && val.length > 1)
+        return "Must start and end with a letter or number, and contain only lowercase letters, numbers, and hyphens.";
+      if (val.length === 1 && !/^[a-z0-9]$/.test(val))
+        return "Must be a lowercase letter or number.";
+    } else {
+      if (val.length < 3 || val.length > 63)
+        return "Must be between 3 and 63 characters.";
+      if (!/^[a-z0-9][a-z0-9.\-]*[a-z0-9]$/.test(val) && val.length > 1)
+        return "Must start and end with a letter or number, and contain only lowercase letters, numbers, hyphens, and periods.";
+      if (val.length === 1 && !/^[a-z0-9]$/.test(val))
+        return "Must be a lowercase letter or number.";
+    }
+    return null;
+  }, [ucConfig.enabled, ucConfig.storage_name, selectedCloud]);
+
   const needsAcknowledgment = ucConfig.enabled;
   const canProceed = !ucConfig.enabled || (
     ucConfig.catalog_name.trim() !== "" &&
     ucConfig.storage_name.trim() !== "" &&
+    !storageNameError &&
     ucPermissionAcknowledged
   );
   const metastoreName = ucPermissionCheck?.metastore.metastore_name;
@@ -165,8 +193,7 @@ export function UnityCatalogConfigScreen() {
         
         {ucConfig.enabled && (
           <>
-            {/* Permission warning - show when Unity Catalog is enabled */}
-            {needsAcknowledgment && (
+            {needsAcknowledgment && metastoreExists === true && (
               <div className="alert alert-warning" style={{ marginBottom: "16px" }}>
                 <strong>Permissions Required</strong>
                 <br />
@@ -182,8 +209,6 @@ export function UnityCatalogConfigScreen() {
                 }}>
                   Required: CREATE CATALOG, CREATE STORAGE CREDENTIAL, CREATE EXTERNAL LOCATION
                 </div>
-                
-                {/* Acknowledgment checkbox */}
                 <label 
                   className="checkbox-label" 
                   style={{ 
@@ -202,6 +227,36 @@ export function UnityCatalogConfigScreen() {
                   />
                   <span style={{ fontSize: "0.9em" }}>
                     I confirm I have the required permissions on this metastore
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {needsAcknowledgment && metastoreExists === false && ucPermissionCheck && (
+              <div className="alert alert-info" style={{ marginBottom: "16px" }}>
+                <strong>New Metastore</strong>
+                <br />
+                <span style={{ fontSize: "0.9em" }}>
+                  {ucPermissionCheck.message}
+                </span>
+                <label 
+                  className="checkbox-label" 
+                  style={{ 
+                    marginTop: "12px", 
+                    display: "flex", 
+                    alignItems: "flex-start",
+                    gap: "8px",
+                    cursor: "pointer"
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={ucPermissionAcknowledged}
+                    onChange={(e) => setUcPermissionAcknowledged(e.target.checked)}
+                    style={{ marginTop: "2px" }}
+                  />
+                  <span style={{ fontSize: "0.9em" }}>
+                    I understand a new metastore will be created in this region
                   </span>
                 </label>
               </div>
@@ -282,18 +337,25 @@ export function UnityCatalogConfigScreen() {
                   setUcConfig(prev => ({ ...prev, storage_name: cleaned }));
                 }}
                 placeholder={selectedCloud === "aws" ? "e.g., mycompany-databricks-uc" : selectedCloud === "gcp" ? "e.g., mycompany-databricks-uc" : "e.g., mycompanydbuc"}
+                className={storageNameError ? "input-error" : ""}
               />
-              <div className="help-text">
-                {selectedCloud === "aws" 
-                  ? "A new S3 bucket will be created for this catalog. Must be globally unique (3-63 characters, lowercase letters, numbers, hyphens, and periods)."
-                  : selectedCloud === "gcp"
-                  ? "A new GCS bucket will be created for this catalog. Must be globally unique (3-63 characters, lowercase letters, numbers, and hyphens)."
-                  : "A new Storage Account will be created for this catalog. Must be globally unique (3-24 characters)."
-                }
-                {storageFormatted && (
-                  <span style={{ color: "var(--accent)", marginLeft: "8px" }}>Auto-formatted</span>
-                )}
-              </div>
+              {storageNameError ? (
+                <div className="help-text" style={{ color: "#e74c3c" }}>
+                  {storageNameError}
+                </div>
+              ) : (
+                <div className="help-text">
+                  {selectedCloud === "aws" 
+                    ? "A new S3 bucket will be created for this catalog. Must be globally unique (3-63 characters, lowercase letters, numbers, hyphens, and periods)."
+                    : selectedCloud === "gcp"
+                    ? "A new GCS bucket will be created for this catalog. Must be globally unique (3-63 characters, lowercase letters, numbers, and hyphens)."
+                    : "A new Storage Account will be created for this catalog. Must be globally unique (3-24 characters)."
+                  }
+                  {storageFormatted && (
+                    <span style={{ color: "var(--accent)", marginLeft: "8px" }}>Auto-formatted</span>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}

@@ -12,6 +12,7 @@ export interface Template {
   cloud: string;
   description: string;
   features: string[];
+  github_url: string;
 }
 
 export interface TerraformVariable {

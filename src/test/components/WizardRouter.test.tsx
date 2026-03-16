@@ -91,7 +91,7 @@ describe("WizardRouter", () => {
     });
 
     it("skips Catalog step when template is gcp-sra", () => {
-      const template = { id: "gcp-sra", name: "GCP SRA", cloud: "gcp", description: "", features: [] };
+      const template = { id: "gcp-sra", name: "GCP SRA", cloud: "gcp", description: "", features: [], github_url: "" };
       const { container } = renderRouter("configuration", { selectedTemplate: template });
       const dots = container.querySelectorAll(".wizard-step-dot");
       // Without catalog step, there should be one fewer dot

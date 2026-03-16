@@ -22,6 +22,7 @@ export interface UseAzureAuthReturn {
   setPermissionCheck: (check: CloudPermissionCheck | null) => void;
   setCheckingPermissions: (checking: boolean) => void;
   loadAccount: () => Promise<AzureAccount | null>;
+  refreshAccount: () => Promise<AzureAccount | null>;
   loadSubscriptions: () => Promise<void>;
   loadResourceGroups: (subscriptionId: string, credentials?: CloudCredentials) => Promise<void>;
   loadVnets: (subscriptionId: string, credentials?: CloudCredentials) => Promise<void>;
@@ -63,6 +64,15 @@ export function useAzureAuth(): UseAzureAuthReturn {
       return null;
     }
   }, []);
+
+  const refreshAccount = useCallback(async (): Promise<AzureAccount | null> => {
+    setLoading(true);
+    try {
+      return await loadAccount();
+    } finally {
+      setLoading(false);
+    }
+  }, [loadAccount]);
 
   const loadSubscriptions = useCallback(async () => {
     try {
@@ -220,6 +230,7 @@ export function useAzureAuth(): UseAzureAuthReturn {
     setPermissionCheck,
     setCheckingPermissions,
     loadAccount,
+    refreshAccount,
     loadSubscriptions,
     loadResourceGroups,
     loadVnets,

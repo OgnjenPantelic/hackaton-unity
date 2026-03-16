@@ -358,7 +358,20 @@ fn format_object_fields(
     let indent = "  ".repeat(depth);
     for (k, v) in obj {
         match v {
-            serde_json::Value::String(s) => lines.push(format!("{}\"{}\" = \"{}\"", indent, k, s)),
+            serde_json::Value::String(s) => {
+                if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(s) {
+                    let items: Vec<String> = arr.iter().map(|v| match v {
+                        serde_json::Value::String(s) => format!("\"{}\"", s),
+                        serde_json::Value::Number(n) => n.to_string(),
+                        serde_json::Value::Bool(b) => b.to_string(),
+                        _ => "null".to_string(),
+                    }).collect();
+                    lines.push(format!("{}\"{}\" = [{}]", indent, k, items.join(", ")));
+                } else {
+                    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+                    lines.push(format!("{}\"{}\" = \"{}\"", indent, k, escaped));
+                }
+            }
             serde_json::Value::Number(n) => lines.push(format!("{}\"{}\" = {}", indent, k, n)),
             serde_json::Value::Bool(b) => lines.push(format!("{}\"{}\" = {}", indent, k, b)),
             serde_json::Value::Object(nested) => {

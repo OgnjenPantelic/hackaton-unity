@@ -8,11 +8,6 @@ variable "public_repos" {
   description = "(Required) List of public repository URLs to allow for spokes"
 }
 
-variable "hub_allowed_urls" {
-  type        = set(string)
-  description = "(Required) List of URLs to allow the hub workspace access to"
-}
-
 variable "resource_suffix" {
   type        = string
   description = "(Required) Naming resource_suffix for resources"

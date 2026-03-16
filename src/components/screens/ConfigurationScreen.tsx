@@ -375,6 +375,8 @@ export function ConfigurationScreen() {
       conditionallyRequired.add("custom_private_subnet_ids_1");
       conditionallyRequired.add("custom_private_subnet_ids_2");
       conditionallyRequired.add("custom_sg_id");
+      conditionallyRequired.add("custom_workspace_vpce_id");
+      conditionallyRequired.add("custom_relay_vpce_id");
     }
   }
 
@@ -540,6 +542,80 @@ export function ConfigurationScreen() {
       }
     }
 
+    // Azure SRA: CIDR range blocking errors (Terraform modules hard-fail outside /16-/24)
+    if (isAzureSra) {
+      const hubCidr = formValues["hub_vnet_cidr"];
+      if (hubCidr && typeof hubCidr === "string") {
+        const p = parseCidr(hubCidr);
+        if (p && (p.prefixLen < 16 || p.prefixLen > 24)) {
+          fieldErrors["hub_vnet_cidr"] = `CIDR prefix /${p.prefixLen} is outside the allowed /16–/24 range.`;
+        }
+      }
+      const wsCidr = formValues["workspace_vnet__cidr"];
+      if (wsCidr && typeof wsCidr === "string") {
+        const p = parseCidr(wsCidr);
+        if (p && (p.prefixLen < 16 || p.prefixLen > 24)) {
+          fieldErrors["workspace_vnet__cidr"] = `CIDR prefix /${p.prefixLen} is outside the allowed /16–/24 range.`;
+        }
+      }
+      // Hub/workspace overlap
+      if (hubCidr && wsCidr && parseCidr(hubCidr) && parseCidr(wsCidr) && cidrsOverlap(hubCidr, wsCidr)) {
+        if (!fieldErrors["hub_vnet_cidr"])
+          fieldErrors["hub_vnet_cidr"] = "Hub VNet CIDR overlaps with the Workspace VNet CIDR. They must be non-overlapping.";
+        if (!fieldErrors["workspace_vnet__cidr"])
+          fieldErrors["workspace_vnet__cidr"] = "Workspace VNet CIDR overlaps with the Hub VNet CIDR. They must be non-overlapping.";
+      }
+    }
+
+    // Azure SRA: compliance standards require compliance_security_profile_enabled
+    if (isAzureSra) {
+      const cspEnabled = formValues["wsc__csp_enabled"] === true || formValues["wsc__csp_enabled"] === "true";
+      const cspStandards = (() => {
+        const val = formValues["wsc__csp_standards"];
+        if (Array.isArray(val)) return val;
+        if (typeof val === "string" && val.trim()) {
+          try { const parsed = JSON.parse(val); if (Array.isArray(parsed)) return parsed; } catch {}
+        }
+        return [];
+      })();
+      if (cspStandards.length > 0 && !cspEnabled) {
+        fieldErrors["wsc__csp_enabled"] = "Compliance standards are selected but Compliance Security Profile is disabled. Enable it or clear the selected standards.";
+      }
+    }
+
+    // Azure SRA: SAT service principal paired fields
+    if (isAzureSra) {
+      const spClientId = (formValues["sat_sp__client_id"] || "") as string;
+      const spClientSecret = (formValues["sat_sp__client_secret"] || "") as string;
+      if ((spClientId && !spClientSecret) || (!spClientId && spClientSecret)) {
+        const missingField = spClientId ? "sat_sp__client_secret" : "sat_sp__client_id";
+        fieldErrors[missingField] = "Both client_id and client_secret must be provided together, or both left empty.";
+      }
+    }
+
+    // Azure SRA: SAT FQDN requirements (blocking when SAT is enabled)
+    if (isAzureSra) {
+      const satEnabled = formValues["sat__enabled"] === true || formValues["sat__enabled"] === "true";
+      if (satEnabled) {
+        const currentUrls: string[] = (() => {
+          const val = formValues["allowed_fqdns"];
+          if (Array.isArray(val)) return val;
+          if (typeof val === "string" && val.trim()) {
+            try { const parsed = JSON.parse(val); if (Array.isArray(parsed)) return parsed; } catch {}
+          }
+          return [];
+        })();
+        const azureMgmtUrls = ["management.azure.com", "login.microsoftonline.com"];
+        const pythonUrls = ["python.org", "*.python.org", "pypi.org", "*.pypi.org", "pythonhosted.org", "*.pythonhosted.org"];
+        const missingAzure = azureMgmtUrls.some(u => !currentUrls.includes(u));
+        const missingPython = pythonUrls.some(u => !currentUrls.includes(u));
+        if (missingAzure || missingPython) {
+          const groups = [missingAzure && "Azure Management", missingPython && "Python Packages"].filter(Boolean);
+          fieldErrors["allowed_fqdns"] = `SAT is enabled — missing required FQDN groups: ${groups.join(", ")}. Deployment will fail without these.`;
+        }
+      }
+    }
+
     const allMissing = [
       ...missingFields.map(v => v.name),
       ...conditionalMissing,
@@ -567,6 +643,12 @@ export function ConfigurationScreen() {
         if (hiddenFields.has(v.name)) continue;
         if (formValidation.missingFields.includes(v.name)) count++;
         if (formValidation.fieldErrors[v.name]) count++;
+        const od = OBJECT_FIELD_DECOMPOSITION[v.name];
+        if (od) {
+          for (const sf of od) {
+            if (formValidation.fieldErrors[sf.key]) count++;
+          }
+        }
         const ld = LIST_FIELD_DECOMPOSITION[v.name];
         if (ld) {
           for (const sf of ld) {
@@ -655,7 +737,7 @@ export function ConfigurationScreen() {
                     const next = e.target.checked
                       ? [...selected, s.value]
                       : selected.filter((x) => x !== s.value);
-                    handleFormChange(sf.key, JSON.stringify(next));
+                    handleFormChange(sf.key, next);
                   }}
                 />
                 {s.label}
@@ -701,9 +783,14 @@ export function ConfigurationScreen() {
           value={formValues[sf.key] || ""}
           onChange={(e) => handleFormChange(sf.key, sf.fieldType === "number" ? (e.target.value ? Number(e.target.value) : "") : e.target.value)}
           placeholder={sf.placeholder || ""}
+          className={formValidation.fieldErrors[sf.key] ? "input-error" : ""}
         />
       )}
-      <div className="help-text">{sf.description}</div>
+      {formValidation.fieldErrors[sf.key] ? (
+        <div className="help-text" style={{ color: "#e74c3c" }}>{formValidation.fieldErrors[sf.key]}</div>
+      ) : (
+        <div className="help-text">{sf.description}</div>
+      )}
       {sf.key === "workspace_vnet__new_bits" && (() => {
         const cidrVal = formValues["workspace_vnet__cidr"];
         if (!cidrVal || typeof cidrVal !== "string") return null;
@@ -718,7 +805,12 @@ export function ConfigurationScreen() {
           </div>
         );
       })()}
-      {sf.key === "workspace_vnet__cidr" && (() => {
+      {sf.key === "workspace_vnet__cidr" && formValidation.fieldErrors["workspace_vnet__cidr"] && (
+        <div className="help-text" style={{ color: "#e74c3c" }}>
+          {formValidation.fieldErrors["workspace_vnet__cidr"]}
+        </div>
+      )}
+      {sf.key === "workspace_vnet__cidr" && !formValidation.fieldErrors["workspace_vnet__cidr"] && (() => {
         const val = formValues[sf.key];
         if (!val || typeof val !== "string") return null;
         const p = parseCidr(val);
@@ -727,7 +819,7 @@ export function ConfigurationScreen() {
           return <div className="help-text" style={{ color: "#ffb347" }}>⚠ Workspace VNet prefix /{p.prefixLen} is outside the recommended /16–/24 range.</div>;
         return null;
       })()}
-      {sf.key === "workspace_vnet__cidr" && sraVnetOverlap && (
+      {sf.key === "workspace_vnet__cidr" && !formValidation.fieldErrors["workspace_vnet__cidr"] && sraVnetOverlap && (
         <div className="help-text" style={{ color: "#ffb347" }}>
           ⚠ Workspace VNet CIDR overlaps with the Hub VNet CIDR. They must be non-overlapping ranges.
         </div>
@@ -825,7 +917,7 @@ export function ConfigurationScreen() {
               checked={formValues[variable.name] === "true" || formValues[variable.name] === true}
               onChange={(e) => handleFormChange(variable.name, e.target.checked)}
             />
-            Enabled
+            {variable.name === "audit_log_delivery_exists" ? "Yes (will skip creating a new one)" : "Enabled"}
           </label>
         ) : variable.name === "workspace_sku" ? (
           <select
@@ -1001,7 +1093,12 @@ export function ConfigurationScreen() {
               <div className="help-text" style={{ marginTop: "4px" }}>
                 If SAT is enabled, Azure Management and Python Packages are required.
               </div>
-              {(() => {
+              {formValidation.fieldErrors["allowed_fqdns"] && (
+                <div className="help-text" style={{ color: "#e74c3c", marginTop: "4px" }}>
+                  {formValidation.fieldErrors["allowed_fqdns"]}
+                </div>
+              )}
+              {!formValidation.fieldErrors["allowed_fqdns"] && (() => {
                 const satEnabled = formValues["sat__enabled"] === true || formValues["sat__enabled"] === "true";
                 if (!satEnabled) return null;
                 const requiredGroups = groups.filter(g => g.id === "azure_mgmt" || g.id === "python");
@@ -1133,12 +1230,12 @@ export function ConfigurationScreen() {
             ⚠ Public and private subnet CIDRs overlap. They must be non-overlapping ranges within the VNet.
           </div>
         )}
-        {variable.name === "hub_vnet_cidr" && sraVnetOverlap && (
+        {variable.name === "hub_vnet_cidr" && !formValidation.fieldErrors["hub_vnet_cidr"] && sraVnetOverlap && (
           <div className="help-text" style={{ color: "#ffb347" }}>
             ⚠ Hub VNet CIDR overlaps with the Workspace VNet CIDR. They must be non-overlapping ranges.
           </div>
         )}
-        {(() => {
+        {!formValidation.fieldErrors[variable.name] && (() => {
           const val = formValues[variable.name];
           if (!val || typeof val !== "string") return null;
           const p = parseCidr(val);

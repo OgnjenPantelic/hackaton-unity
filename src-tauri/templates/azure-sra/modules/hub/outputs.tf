@@ -13,11 +13,6 @@ output "network_policy_id" {
   value       = databricks_account_network_policy.restrictive_network_policy.network_policy_id
 }
 
-output "hub_network_policy_id" {
-  description = "Hub network policy ID for WEBAUTH workspace"
-  value       = databricks_account_network_policy.hub_policy.network_policy_id
-}
-
 output "resource_suffix" {
   description = "Resource suffix"
   value       = var.resource_suffix

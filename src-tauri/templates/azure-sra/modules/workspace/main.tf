@@ -68,11 +68,14 @@ resource "azurerm_databricks_workspace" "this" {
   tags = var.tags
 }
 
-resource "azapi_update_resource" "this" {
+resource "azapi_resource_action" "this" {
   count       = var.enhanced_security_compliance.compliance_security_profile_standards == null ? 0 : 1
-  type        = "Microsoft.Databricks/workspaces@2025-03-01-preview"
+  type        = "Microsoft.Databricks/workspaces@2024-05-01"
   resource_id = azurerm_databricks_workspace.this.id
+  method      = "PATCH"
   body        = local.csp_update_body
+
+  depends_on = [time_sleep.workspace_wait]
 }
 
 # Wait for 10 seconds after workspace creation to allow for APIs to become available

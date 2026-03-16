@@ -95,17 +95,9 @@ variable "allowed_fqdns" {
     condition     = var.sat_configuration.enabled && !var.sat_configuration.run_on_serverless ? length(setsubtract(["management.azure.com", "login.microsoftonline.com", "python.org", "*.python.org", "pypi.org", "*.pypi.org", "pythonhosted.org", "*.pythonhosted.org"], var.allowed_fqdns)) == 0 : true
     error_message = "Since SAT is enabled and is not running on serverless, you must include SAT-required URLs in the allowed_fqdns variable."
   }
-}
-
-# This is for allowing the hub workspace to access a separate list of URLs from serverless (e.g. for SAT)
-variable "hub_allowed_urls" {
-  type        = set(string)
-  description = "(Optional) List of URLs to allow serverless compute in the hub (webauth) workspace access to."
-  default     = []
-
   validation {
-    condition     = var.sat_configuration.enabled && var.sat_configuration.run_on_serverless ? length(setsubtract(["management.azure.com", "login.microsoftonline.com", "python.org", "pypi.org", "pythonhosted.org"], var.hub_allowed_urls)) == 0 : true
-    error_message = "Since SAT is enabled and running on serverless you must include SAT-required URLs in the hub_allowed_urls variable."
+    condition     = var.sat_configuration.enabled && var.sat_configuration.run_on_serverless ? length(setsubtract(["management.azure.com", "login.microsoftonline.com", "python.org", "pypi.org", "pythonhosted.org"], var.allowed_fqdns)) == 0 : true
+    error_message = "Since SAT is enabled and running on serverless, you must include SAT-required URLs in the allowed_fqdns variable."
   }
 }
 # ------------------------------------------------------------------

@@ -51,11 +51,11 @@ module "databricks_mws_workspace" {
   deployment_name       = var.deployment_name
 
   # Network Configuration
-  vpc_id             = var.custom_vpc_id != null ? var.custom_vpc_id : module.vpc[0].vpc_id
-  subnet_ids         = var.custom_private_subnet_ids != null ? var.custom_private_subnet_ids : module.vpc[0].private_subnets
-  security_group_ids = var.custom_sg_id != null ? [var.custom_sg_id] : [aws_security_group.sg[0].id]
-  backend_rest       = var.custom_workspace_vpce_id != null ? var.custom_workspace_vpce_id : aws_vpc_endpoint.backend_rest[0].id
-  backend_relay      = var.custom_relay_vpce_id != null ? var.custom_relay_vpce_id : aws_vpc_endpoint.backend_relay[0].id
+  vpc_id             = coalesce(var.custom_vpc_id, try(module.vpc[0].vpc_id, null))
+  subnet_ids         = coalesce(var.custom_private_subnet_ids, try(module.vpc[0].private_subnets, null))
+  security_group_ids = var.custom_sg_id != null ? [var.custom_sg_id] : try([aws_security_group.sg[0].id], [])
+  backend_rest       = coalesce(var.custom_workspace_vpce_id, try(aws_vpc_endpoint.backend_rest[0].id, null))
+  backend_relay      = coalesce(var.custom_relay_vpce_id, try(aws_vpc_endpoint.backend_relay[0].id, null))
 
   # Cross-Account Role
   cross_account_role_arn = aws_iam_role.cross_account_role.arn

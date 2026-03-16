@@ -85,8 +85,8 @@ export function AwsCredentialsScreen() {
               </summary>
               <ol style={{ margin: "8px 0 0 0", paddingLeft: "20px" }}>
                 <li>Install the <a href="https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html" target="_blank" rel="noopener noreferrer" style={{ color: "#ff6b35" }}>AWS CLI</a>.</li>
-                <li>Run <code>aws configure</code> (for access keys) or <code>aws configure sso</code> (for SSO).</li>
-                <li>Enter your credentials when prompted.</li>
+                <li>Run <code>aws configure</code> (for access keys) or <code>aws configure sso</code> (for SSO) and enter your credentials when prompted.</li>
+                <li>Click <strong>Verify</strong> below to load your profiles.</li>
               </ol>
               <p style={{ margin: "8px 0 0 0", fontSize: "12px", color: "#888" }}>
                 Profiles are stored in <code>~/.aws/config</code> and <code>~/.aws/credentials</code>.{" "}
@@ -100,7 +100,7 @@ export function AwsCredentialsScreen() {
                 <Alert type="warning">
                   <strong>No AWS profiles found.</strong>
                   <p style={{ margin: "8px 0 0 0", fontSize: "13px" }}>
-                    Please set up AWS CLI following the instructions above, then click "Verify", or switch to "Use Access Keys".
+                    Run <code>aws configure</code> or <code>aws configure sso</code> in your terminal, then click <strong>Verify</strong> below, or switch to "Use Access Keys".
                   </p>
                 </Alert>
                 <button
@@ -162,7 +162,7 @@ export function AwsCredentialsScreen() {
                           onClick={onRefreshProfiles}
                           disabled={awsLoading || checkingPermissions}
                         >
-                          {awsLoading ? "Verifying..." : "Verify"}
+                          {awsLoading ? "Verifying..." : awsIdentity ? "Refresh" : "Verify"}
                         </button>
                         {awsProfiles.find(p => p.name === credentials.aws_profile)?.is_sso && (
                           <button

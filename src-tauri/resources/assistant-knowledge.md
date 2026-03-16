@@ -177,7 +177,7 @@ Creates: VPC with PrivateLink endpoints (backend REST + SCC relay), CMK encrypti
 - **Private Subnet CIDRs** — two CIDR blocks for private subnets (Databricks compute nodes; defaults: 10.0.0.0/18, 10.0.64.0/18).
 - **PrivateLink Subnet CIDRs** — two CIDR blocks for PrivateLink endpoint subnets (defaults: 10.0.128.0/28, 10.0.128.16/28).
 - **Custom VPC ID**, **Custom Subnet IDs**, **Custom Security Group ID** — bring an existing VPC instead of creating new.
-- **Custom Relay VPC Endpoint ID**, **Custom Workspace VPC Endpoint ID** — bring existing PrivateLink endpoints.
+- **Custom Relay VPC Endpoint ID**, **Custom Workspace VPC Endpoint ID** — existing PrivateLink endpoint IDs. Required when using custom network mode.
 
 ### Security Group Egress Ports
 - **Egress Ports** — list of allowed egress ports for the security group (defaults: 443, 3306, 6666, 8443-8451).
@@ -195,7 +195,7 @@ Creates: VPC with PrivateLink endpoints (backend REST + SCC relay), CMK encrypti
 
 ### Additional Settings
 - **Metastore Exists** — whether a metastore already exists in the region.
-- **Audit Log Delivery Exists** — whether audit log delivery is already configured.
+- **Audit Log Delivery Already Configured** — check if audit log delivery is already configured; leave unchecked to create it.
 - **Deployment Name** — custom deployment name (must be enabled by Databricks representative).
 - GovCloud: **Databricks Gov Shard** (civilian or dod) and **AWS Partition** for us-gov-west-1 deployments. Regional endpoints, bucket names, and IAM ARNs are auto-computed based on shard type.
 
@@ -292,7 +292,8 @@ Unified governance for data and AI. When enabled:
 - Configure catalog name and storage (S3/Azure Storage/GCS - must be globally unique).
 - Premium SKU required on Azure.
 - Regardless of the choice of the user, we will always assign a metastore (enable UC). The main choice for the user is if they want to create a new catalog or not for this workspace.
-- A **permission acknowledgment checkbox** is always required when Unity Catalog is enabled — the user must confirm they have the necessary permissions to create a catalog before proceeding.
+- A **permission acknowledgment checkbox** is always required when Unity Catalog is enabled. Two scenarios: (1) **Existing metastore** — shows a permission warning that CREATE CATALOG, CREATE STORAGE CREDENTIAL, and CREATE EXTERNAL LOCATION are needed, and the user must acknowledge. (2) **No metastore found** — shows a "New Metastore" info card identifying who will become Metastore Admin (based on current credentials), and the user must acknowledge a new metastore will be created.
+- Storage name is validated inline: Azure requires 3-24 characters (lowercase letters and numbers only); AWS/GCP require 3-63 characters (lowercase letters, numbers, hyphens, and periods for AWS; hyphens only for GCP).
 - Click **"Create Workspace →"** to proceed to deployment.
 
 <!-- section: deployment -->

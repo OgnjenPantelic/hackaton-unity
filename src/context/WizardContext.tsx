@@ -477,7 +477,7 @@ export function WizardProvider({ children }: { children: ReactNode }) {
   };
 
   const checkAzureAccount = async () => {
-    const account = await azure.loadAccount();
+    const account = await azure.refreshAccount();
     if (account) await applyAzureAccount(account);
   };
 

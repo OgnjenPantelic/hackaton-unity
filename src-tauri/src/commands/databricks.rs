@@ -13,9 +13,9 @@ use std::process::Stdio;
 /// Azure AD resource ID for Databricks - used to obtain tokens for account-level APIs
 const DATABRICKS_AZURE_RESOURCE_ID: &str = "2ff814a6-3304-4ab8-85cb-cd0e6f879c1d";
 
-const MSG_NO_METASTORE: &str = "No metastore found in region. A new one will be created.";
+const MSG_NO_METASTORE_PREFIX: &str = "No metastore found in region.";
 const MSG_METASTORE_UNAVAILABLE: &str =
-    "Metastore detection unavailable. Any existing metastore will be auto-detected during deployment.";
+    "Metastore detection unavailable. Deployment will proceed; if issues arise, verify metastore status in the Account Console.";
 
 /// Fetch Azure AD access token for Databricks resource.
 /// If token retrieval fails due to missing consent/interaction, trigger interactive login and retry.
@@ -503,60 +503,35 @@ fn find_metastore_for_region<'a>(
 }
 
 /// Generate a message about metastore ownership for permission guidance.
+/// Resolve the current user/SP identity from credentials.
+/// Priority: GCP service account (JSON or email) > Azure user > Databricks SP > Databricks profile
+fn get_current_identity(credentials: &CloudCredentials) -> String {
+    if let Some(gcp_creds_json) = credentials.gcp_credentials_json.as_ref().filter(|s| !s.is_empty()) {
+        if let Ok(sa_data) = serde_json::from_str::<serde_json::Value>(gcp_creds_json) {
+            if let Some(email) = sa_data["client_email"].as_str() {
+                return format!("Service account '{}'", email);
+            }
+        }
+    }
+    if let Some(sa_email) = credentials.gcp_service_account_email.as_ref().filter(|s| !s.is_empty()) {
+        return format!("Service account '{}'", sa_email);
+    }
+    if let Some(email) = credentials.azure_account_email.as_ref().filter(|s| !s.is_empty()) {
+        return format!("User '{}'", email);
+    }
+    if let Some(client_id) = credentials.databricks_client_id.as_ref().filter(|s| !s.is_empty()) {
+        return format!("Service principal '{}'", client_id);
+    }
+    if let Some(profile) = credentials.databricks_profile.as_ref().filter(|s| !s.is_empty()) {
+        return format!("Profile '{}'", profile);
+    }
+    "Your Databricks user or service principal".to_string()
+}
+
 fn get_metastore_owner_info(metastore_owner: &str, credentials: &CloudCredentials) -> String {
     let is_user = metastore_owner.contains('@');
     let is_uuid = is_valid_uuid(metastore_owner);
-
-    // Determine the current user/SP identity based on active authentication method
-    // Priority: GCP service account (JSON or email) > Azure user > Databricks SP > Databricks profile
-    let current_identity = if let Some(gcp_creds_json) = credentials.gcp_credentials_json.as_ref().filter(|s| !s.is_empty()) {
-        // GCP service account authentication (credentials mode - extract from JSON)
-        if let Ok(sa_data) = serde_json::from_str::<serde_json::Value>(gcp_creds_json) {
-            if let Some(email) = sa_data["client_email"].as_str() {
-                format!("Service account '{}'", email)
-            } else {
-                // JSON parsing succeeded but no client_email, continue to next check
-                if let Some(sa_email) = credentials.gcp_service_account_email.as_ref().filter(|s| !s.is_empty()) {
-                    format!("Service account '{}'", sa_email)
-                } else if let Some(email) = credentials.azure_account_email.as_ref().filter(|s| !s.is_empty()) {
-                    format!("User '{}'", email)
-                } else if let Some(client_id) = credentials.databricks_client_id.as_ref().filter(|s| !s.is_empty()) {
-                    format!("Service principal '{}'", client_id)
-                } else if let Some(profile) = credentials.databricks_profile.as_ref().filter(|s| !s.is_empty()) {
-                    format!("Profile '{}'", profile)
-                } else {
-                    "Your Databricks user or service principal".to_string()
-                }
-            }
-        } else {
-            // JSON parsing failed, continue to other checks
-            if let Some(sa_email) = credentials.gcp_service_account_email.as_ref().filter(|s| !s.is_empty()) {
-                format!("Service account '{}'", sa_email)
-            } else if let Some(email) = credentials.azure_account_email.as_ref().filter(|s| !s.is_empty()) {
-                format!("User '{}'", email)
-            } else if let Some(client_id) = credentials.databricks_client_id.as_ref().filter(|s| !s.is_empty()) {
-                format!("Service principal '{}'", client_id)
-            } else if let Some(profile) = credentials.databricks_profile.as_ref().filter(|s| !s.is_empty()) {
-                format!("Profile '{}'", profile)
-            } else {
-                "Your Databricks user or service principal".to_string()
-            }
-        }
-    } else if let Some(sa_email) = credentials.gcp_service_account_email.as_ref().filter(|s| !s.is_empty()) {
-        // GCP service account authentication (impersonation mode)
-        format!("Service account '{}'", sa_email)
-    } else if let Some(email) = credentials.azure_account_email.as_ref().filter(|s| !s.is_empty()) {
-        // Azure user identity
-        format!("User '{}'", email)
-    } else if let Some(client_id) = credentials.databricks_client_id.as_ref().filter(|s| !s.is_empty()) {
-        // Databricks service principal (used by AWS/Azure/GCP)
-        format!("Service principal '{}'", client_id)
-    } else if let Some(profile) = credentials.databricks_profile.as_ref().filter(|s| !s.is_empty()) {
-        // Databricks CLI profile
-        format!("Profile '{}'", profile)
-    } else {
-        "Your Databricks user or service principal".to_string()
-    };
+    let current_identity = get_current_identity(credentials);
 
     if is_user {
         format!(
@@ -727,7 +702,7 @@ pub async fn check_uc_permissions(
                             has_create_external_location: true,
                             has_create_storage_credential: true,
                             can_create_catalog: true,
-                            message: MSG_NO_METASTORE.to_string(),
+                            message: format!("{} {} will be Metastore Admin.", MSG_NO_METASTORE_PREFIX, get_current_identity(&credentials)),
                         });
                     }
                 }
@@ -824,7 +799,7 @@ pub async fn check_uc_permissions(
             has_create_external_location: true,
             has_create_storage_credential: true,
             can_create_catalog: true,
-            message: MSG_NO_METASTORE.to_string(),
+            message: format!("{} {} will be Metastore Admin.", MSG_NO_METASTORE_PREFIX, get_current_identity(&credentials)),
         });
     }
 
@@ -1095,7 +1070,7 @@ pub async fn check_uc_permissions(
                                 has_create_external_location: true,
                                 has_create_storage_credential: true,
                                 can_create_catalog: true,
-                                message: MSG_NO_METASTORE.to_string(),
+                                message: format!("{} {} will be Metastore Admin.", MSG_NO_METASTORE_PREFIX, get_current_identity(&credentials)),
                             });
                         }
                     }
@@ -1207,7 +1182,7 @@ pub async fn check_uc_permissions(
             has_create_external_location: true,
             has_create_storage_credential: true,
             can_create_catalog: true,
-            message: MSG_NO_METASTORE.to_string(),
+            message: format!("{} {} will be Metastore Admin.", MSG_NO_METASTORE_PREFIX, get_current_identity(&credentials)),
         });
     }
 
@@ -1348,7 +1323,7 @@ pub async fn check_uc_permissions(
             has_create_external_location: true,
             has_create_storage_credential: true,
             can_create_catalog: true,
-            message: MSG_NO_METASTORE.to_string(),
+            message: format!("{} {} will be Metastore Admin.", MSG_NO_METASTORE_PREFIX, get_current_identity(&credentials)),
         })
     }
 }
