@@ -749,7 +749,7 @@ dependencies = [
 
 [[package]]
 name = "databricks-deployer"
-version = "1.0.18"
+version = "1.0.19"
 dependencies = [
  "aes-gcm",
  "base64 0.22.1",
