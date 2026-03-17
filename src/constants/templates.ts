@@ -147,9 +147,9 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   // Network - AWS
   create_new_vpc: "Enable to create a new VPC, or disable to use an existing VPC with your own subnets and security group.",
   cidr_block: "Address space for the new VPC (e.g., 10.4.0.0/16).",
-  private_subnet_1_cidr: "CIDR for private subnet in AZ 1 (Databricks compute). Leave empty to auto-calculate as VPC/4. Suggested: keep empty unless you need custom sizing.",
-  private_subnet_2_cidr: "CIDR for private subnet in AZ 2 (Databricks compute). Leave empty to auto-calculate as VPC/4. Suggested: keep empty unless you need custom sizing.",
-  public_subnet_cidr: "CIDR for public subnet (NAT gateway only). Leave empty to auto-calculate as /28. Suggested: keep empty unless you need custom sizing.",
+  private_subnet_1_cidr: "CIDR for private subnet in AZ 1 (Databricks compute). Leave empty to auto-calculate from VPC CIDR.",
+  private_subnet_2_cidr: "CIDR for private subnet in AZ 2 (Databricks compute). Leave empty to auto-calculate from VPC CIDR.",
+  public_subnet_cidr: "CIDR for public subnet (NAT gateway). Small /28 subnet is recommended.",
   // Network - GCP
   subnet_cidr: "CIDR range for the Databricks subnet (e.g., 10.0.0.0/16).",
   // Advanced

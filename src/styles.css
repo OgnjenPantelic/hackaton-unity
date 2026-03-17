@@ -307,7 +307,7 @@ button.cloud-card {
 }
 
 .form-section.advanced h3 {
-  color: #888;
+  color: #e0e0e0;
   border-bottom: none;
   margin-bottom: 0;
   padding-bottom: 0;
@@ -758,6 +758,16 @@ input[type="checkbox"] {
 .btn-large:hover {
   box-shadow: 0 6px 20px rgba(255, 107, 53, 0.4);
   background: linear-gradient(135deg, #e85a2a 0%, #ff6b35 100%);
+}
+
+.btn.btn-slim {
+  padding: 16px 36px;
+  font-size: 17px;
+}
+
+.btn.btn-large.btn-slim {
+  padding: 16px 44px;
+  font-size: 17px;
 }
 
 .back-btn {
@@ -1328,6 +1338,27 @@ input[type="checkbox"] {
 /* Center actions */
 .deployment-status-card + .status-controls {
   justify-content: center;
+}
+
+/* Template folder button — dark with subtle glow */
+.btn-template-folder {
+  padding: 14px 36px;
+  font-size: 1em;
+  font-family: inherit;
+  font-weight: 500;
+  color: #c0c0c0;
+  background: #1e1e2a;
+  border: 1px solid #3a3a4a;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(255, 107, 53, 0.15), 0 0 4px rgba(255, 107, 53, 0.1);
+  transition: box-shadow 0.25s, border-color 0.25s, color 0.25s;
+}
+
+.btn-template-folder:hover {
+  color: #e0e0e0;
+  border-color: #ff6b35;
+  box-shadow: 0 0 20px rgba(255, 107, 53, 0.3), 0 0 8px rgba(255, 107, 53, 0.2);
 }
 
 /* Scrollbar styling */
@@ -2908,6 +2939,14 @@ input[type="checkbox"] {
 }
 .terraform-log .tf-info {
   color: var(--text-muted);
+}
+.terraform-log .tf-error {
+  color: #ff6b6b;
+  background: rgba(255, 70, 70, 0.1);
+  border-left: 3px solid #ff4646;
+  padding-left: 8px;
+  margin-left: -8px;
+  font-weight: 500;
 }
 
 .log-panel {

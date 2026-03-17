@@ -66,6 +66,7 @@ function formatTerraformOutput(output: string): React.ReactNode[] {
     if (/^\s*\+/.test(line) || /Creation complete/.test(line)) cls = "tf-add";
     else if (/^\s*-/.test(line) || /Destroying|Destruction complete/.test(line)) cls = "tf-destroy";
     else if (/^\s*~/.test(line) || /Modifying/.test(line)) cls = "tf-change";
+    else if (/Error:|╷|│|╵/.test(line) || /error\b/i.test(line)) cls = "tf-error";
     return <div key={i} className={cls}>{line}</div>;
   });
 }
@@ -367,7 +368,15 @@ export function DeploymentScreen() {
   const status = deploymentStatus;
 
   const [confirmAction, setConfirmAction] = useState<"cancel" | "rollback" | "newDeployment" | "newDeploymentAfterSuccess" | null>(null);
+  const logEndRef = useRef<HTMLDivElement>(null);
   const isWorking = deploymentStep === "initializing" || deploymentStep === "planning" || deploymentStep === "deploying";
+
+  useEffect(() => {
+    if (deploymentStep === "failed") {
+      setShowDetailedLogs(true);
+      setTimeout(() => logEndRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
+    }
+  }, [deploymentStep]);
   const elapsedStr = useElapsedTimer(isWorking);
   
   const getCatalogExistsError = (output: string | undefined): string | null => {
@@ -530,7 +539,7 @@ export function DeploymentScreen() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="status-controls" style={{ marginTop: "24px", justifyContent: deploymentStep === "complete" ? "center" : "space-between", alignItems: "center" }}>
+      <div style={{ marginTop: "24px", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <label className="log-toggle">
           <input
             type="checkbox"
@@ -539,20 +548,9 @@ export function DeploymentScreen() {
           />
           Show detailed logs
         </label>
-        {templatePath && deploymentStep !== "complete" && (
-          <div style={{ fontSize: "12px", color: "var(--text-muted)" }}>
-            Deployment folder: <code style={{ marginRight: "8px" }}>{templatePath}</code>
-            <button 
-              onClick={onOpenTemplateFolder}
-              style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: "12px", textDecoration: "underline" }}
-            >
-              Open
-            </button>
-          </div>
-        )}
       </div>
 
-      <div style={{ marginTop: "24px", display: "flex", gap: "12px", justifyContent: "center" }}>
+      <div style={{ marginTop: "24px", display: "flex", flexWrap: "wrap", gap: "12px", justifyContent: "center", alignItems: "center" }}>
         {isWorking && (
           <button className="btn btn-danger" onClick={() => setConfirmAction("cancel")}>
             Cancel
@@ -561,15 +559,27 @@ export function DeploymentScreen() {
         
         {deploymentStep === "review" && (
           <>
-            <button className="btn btn-secondary" onClick={onGoBack}>
+            <button className="btn btn-secondary btn-slim" onClick={onGoBack}>
               Go Back & Edit
             </button>
-            <button className="btn btn-large btn-success" onClick={onConfirmDeploy}>
+            <button className="btn btn-large btn-success btn-slim" onClick={onConfirmDeploy}>
               Confirm & Deploy →
             </button>
           </>
         )}
-        
+      </div>
+      {deploymentStep === "review" && templatePath && (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", marginTop: "16px" }}>
+          <span style={{ color: "var(--text-muted)", fontSize: "12px", marginBottom: "12px" }}>or</span>
+          <button className="btn-template-folder" onClick={onOpenTemplateFolder}>
+            Open Template Folder
+          </button>
+          <p style={{ fontSize: "12px", color: "#e0e0e0", marginTop: "8px", textAlign: "center", maxWidth: "500px" }}>
+            For advanced users: the full Terraform code and generated .tfvars are available in this folder if you prefer to customize and deploy manually.
+          </p>
+        </div>
+      )}
+      <div style={{ marginTop: "12px", display: "flex", gap: "12px", justifyContent: "center", alignItems: "center" }}>
         {deploymentStep === "complete" && !isRollingBack && (() => {
           const workspaceUrl = parsedOutputs.workspace_url;
           const metastoreStatus = parsedOutputs.metastore_status;
@@ -677,13 +687,13 @@ export function DeploymentScreen() {
               return null;
             })()}
             <div style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
-              <button className="btn" onClick={onStartDeployment}>Try Again</button>
-              <button className="btn btn-secondary" onClick={() => setConfirmAction("newDeployment")}>
-                Start New Deployment
+              <button className="btn btn-secondary" onClick={onGoBack}>
+                Go Back & Edit
               </button>
-              {status?.can_rollback && (
-                <button className="btn btn-danger" onClick={() => setConfirmAction("rollback")}>
-                  Cleanup Resources
+              <button className="btn" onClick={onStartDeployment}>Try Again</button>
+              {templatePath && (
+                <button className="btn-template-folder" onClick={onOpenTemplateFolder}>
+                  Open Template Folder
                 </button>
               )}
             </div>
@@ -696,6 +706,7 @@ export function DeploymentScreen() {
           <CopyButton text={status.output} onCopy={copyToClipboard} />
           <div className="output expanded terraform-log">
             {formatTerraformOutput(status.output)}
+            <div ref={logEndRef} />
           </div>
         </div>
       )}

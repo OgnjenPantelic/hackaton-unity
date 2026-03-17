@@ -1216,8 +1216,29 @@ export function ConfigurationScreen() {
           </div>
         )}
         {(VARIABLE_DESCRIPTION_OVERRIDES[variable.name] || variable.description) && !formValidation.fieldErrors[variable.name] && (
-          <div className="help-text">
+          <div className="help-text" style={isSubnetField ? { display: "flex", alignItems: "center", gap: "6px" } : undefined}>
             <LinkifyText text={VARIABLE_DESCRIPTION_OVERRIDES[variable.name] || variable.description} />
+            {isSubnetField && fieldParsed && variable.name !== "public_subnet_cidr" && (
+              <span className="cidr-tooltip-wrapper">
+                <span className="cidr-tooltip-icon">?</span>
+                <span className="cidr-tooltip">
+                  <span className="cidr-tooltip-title">IP Address Requirements</span>
+                  <span className="cidr-tooltip-subtitle">Nodes = The maximum number of nodes that can be active <strong>concurrently</strong> in your workspace.</span>
+                  <table className="cidr-tooltip-table">
+                    <thead><tr><th>Subnet</th><th>IPs</th><th>Nodes</th></tr></thead>
+                    <tbody>
+                      {[17,18,19,20,21,22,23,24,25,26].map(p => (
+                        <tr key={p} className={p === fieldParsed.prefixLen ? "cidr-tooltip-active" : ""}>
+                          <td>/{p}</td>
+                          <td>{Math.pow(2, 32 - p).toLocaleString()}</td>
+                          <td>{getUsableNodes(p).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </span>
+              </span>
+            )}
           </div>
         )}
         {variable.name === "cidr" && vnetOverlap && (
@@ -1256,35 +1277,6 @@ export function ConfigurationScreen() {
           if (!warn) return null;
           return <div className="help-text" style={{ color: "#ffb347" }}>{warn}</div>;
         })()}
-        {isSubnetField && fieldParsed && (
-          <div className="help-text" style={{ color: "#4ec9b0", display: "flex", alignItems: "center", gap: "6px" }}>
-            {variable.name === "public_subnet_cidr"
-              ? `Suggested: fixed /${fieldParsed.prefixLen} for NAT gateway.`
-              : variable.name.startsWith("private_subnet_")
-                ? `Suggested: /${fieldParsed.prefixLen} (1/4 of VPC). Each subnet scales with VPC size.`
-                : `Auto-filled with /${fieldParsed.prefixLen} prefix (2 higher than VNet), leaving space for future expansion.`
-            }
-            <span className="cidr-tooltip-wrapper">
-              <span className="cidr-tooltip-icon">?</span>
-              <span className="cidr-tooltip">
-                <span className="cidr-tooltip-title">IP Address Requirements</span>
-                <span className="cidr-tooltip-subtitle">Nodes = The maximum number of nodes that can be active <strong>concurrently</strong> in your workspace.</span>
-                <table className="cidr-tooltip-table">
-                  <thead><tr><th>Subnet</th><th>IPs</th><th>Nodes</th></tr></thead>
-                  <tbody>
-                    {[17,18,19,20,21,22,23,24,25,26].map(p => (
-                      <tr key={p} className={p === fieldParsed.prefixLen ? "cidr-tooltip-active" : ""}>
-                        <td>/{p}</td>
-                        <td>{Math.pow(2, 32 - p).toLocaleString()}</td>
-                        <td>{getUsableNodes(p).toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </span>
-            </span>
-          </div>
-        )}
       </div>
     );
   };
