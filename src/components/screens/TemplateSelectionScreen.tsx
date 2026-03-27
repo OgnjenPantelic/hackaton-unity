@@ -58,7 +58,7 @@ export function TemplateSelectionScreen() {
         ) : (
           <>
             {cloudTemplates.map((template) => {
-              const inDev = template.id === "gcp-sra";
+              const inDev = template.id === "gcp-sra" || template.id === "aws-sra" || template.id === "azure-sra";
               const isLoading = loadingTemplate === template.id;
               const disabled = inDev || !!loadingTemplate;
               return (
