@@ -479,6 +479,10 @@ pub fn save_configuration(
                     "azure_subscription_id".to_string(),
                     serde_json::Value::String(sub_id.clone()),
                 );
+                merged_values.insert(
+                    "az_subscription".to_string(),
+                    serde_json::Value::String(sub_id.clone()),
+                );
             }
         }
 

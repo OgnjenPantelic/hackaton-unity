@@ -28,6 +28,15 @@ export const VARIABLE_DISPLAY_NAMES: Record<string, string> = {
   private_subnet_1_cidr: "Private Subnet 1 CIDR",
   private_subnet_2_cidr: "Private Subnet 2 CIDR",
   public_subnet_cidr: "Public Subnet CIDR (NAT)",
+  // Azure PL naming
+  resource_prefix: "Resources Prefix",
+  // Network - Azure (Private Link)
+  cidr_dp: "VNet CIDR",
+  subnet_workspace_cidrs: "Workspace Subnet CIDRs",
+  subnet_private_endpoint_cidr: "Private Endpoint Subnet CIDR",
+  subnets_service_endpoints: "Service Endpoints",
+  create_data_plane_resource_group: "Create New Resource Group",
+  existing_data_plane_resource_group_name: "Existing Resource Group",
   // Network - GCP (simple)
   subnet_cidr: "Subnet CIDR",
   // Other
@@ -62,7 +71,6 @@ export const VARIABLE_DISPLAY_NAMES: Record<string, string> = {
   sat_configuration: "SAT Configuration",
 
   // --- SRA: AWS ---
-  resource_prefix: "Workspace Name",
   network_configuration: "Network Mode",
   vpc_cidr_range: "VPC CIDR Range",
   private_subnets_cidr: "Private Subnets CIDR",
@@ -121,7 +129,7 @@ export const VARIABLE_DISPLAY_NAMES: Record<string, string> = {
 
 export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   // Workspace
-  prefix: "Name for your Databricks workspace. Also used as prefix for storage, credentials, and network resources.",
+  prefix: "Display name for your Databricks workspace.",
   workspace_name: "Name for your Databricks workspace.",
   databricks_workspace_name: "Name for your Databricks workspace.",
   admin_user: "Email address of the workspace admin. Must already exist in your Databricks account.",
@@ -150,6 +158,14 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   private_subnet_1_cidr: "CIDR for private subnet in AZ 1 (Databricks compute). Leave empty to auto-calculate from VPC CIDR.",
   private_subnet_2_cidr: "CIDR for private subnet in AZ 2 (Databricks compute). Leave empty to auto-calculate from VPC CIDR.",
   public_subnet_cidr: "CIDR for public subnet (NAT gateway). Small /28 subnet is recommended.",
+  // Azure PL naming
+  resource_prefix: "Prefix for Azure resource names (VNet, NSG, subnets). Also used to derive DBFS storage account name.",
+  // Network - Azure (Private Link)
+  cidr_dp: "CIDR for the data plane VNet address space. Must encompass all subnets. Use a block between /16 and /24.",
+  subnet_private_endpoint_cidr: "CIDR for the Private Link subnet (control plane and DBFS private endpoints). Example: 10.0.2.0/26.",
+  subnets_service_endpoints: "Azure service endpoints for the workspace subnets (e.g. Microsoft.Storage). Leave empty if not needed.",
+  create_data_plane_resource_group: "Create a new resource group for data plane resources, or use an existing one.",
+  existing_data_plane_resource_group_name: "Name of the existing resource group to deploy data plane resources into.",
   // Network - GCP
   subnet_cidr: "CIDR range for the Databricks subnet (e.g., 10.0.0.0/16).",
   // Advanced
@@ -183,7 +199,6 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   sat_service_principal: "Service principal for running SAT. Leave empty to create one automatically.",
 
   // --- SRA: AWS ---
-  resource_prefix: "Name for your workspace. Also used as prefix for all resource names (1-26 chars, lowercase letters, numbers, hyphens, and dots).",
   network_configuration: "Network mode: 'isolated' creates a new VPC with PrivateLink; 'custom' uses your existing VPC.",
   vpc_cidr_range: "CIDR range for the VPC (e.g. 10.0.0.0/16).",
   private_subnets_cidr: "CIDR blocks for private subnets within the VPC.",
@@ -254,6 +269,9 @@ export const EXCLUDE_VARIABLES = [
   "azure_client_id",
   "azure_client_secret",
   "create_new_resource_group",
+  "create_data_plane_resource_group",
+  "existing_data_plane_resource_group_name",
+  "az_subscription",
   // GCP variables - collected in credentials screen
   "gcp_project_id",
   "google_project",
@@ -390,6 +408,11 @@ export const LIST_FIELD_DECOMPOSITION: Record<string, ListSubField[]> = {
     { key: "custom_private_subnet_ids_1", index: 0, label: "Private Subnet ID 1", description: "ID of the first existing private subnet.", required: true, placeholder: "subnet-..." },
     { key: "custom_private_subnet_ids_2", index: 1, label: "Private Subnet ID 2", description: "ID of the second existing private subnet.", required: true, placeholder: "subnet-..." },
   ],
+  // Azure PL: workspace subnets [public, private]
+  subnet_workspace_cidrs: [
+    { key: "subnet_workspace_cidrs_0", index: 0, label: "Public Subnet CIDR", description: "CIDR for workspace public subnet. Must be within VNet CIDR, at least /26.", required: true, placeholder: "10.0.0.0/24" },
+    { key: "subnet_workspace_cidrs_1", index: 1, label: "Private Subnet CIDR", description: "CIDR for workspace private subnet. Must be within VNet CIDR, at least /26.", required: true, placeholder: "10.0.1.0/24" },
+  ],
   // AWS simple: existing subnet IDs (when using existing VPC)
   existing_subnet_ids: [
     { key: "existing_subnet_ids_1", index: 0, label: "Existing Subnet ID 1", description: "ID of the first existing private subnet (AZ 1).", required: true, placeholder: "subnet-..." },
@@ -433,6 +456,19 @@ export const COMPLIANCE_STANDARDS: Record<string, { value: string; label: string
     { value: "C5", label: "C5" },
   ],
 };
+
+export const AZURE_SERVICE_ENDPOINTS: { value: string; label: string; description: string }[] = [
+  { value: "Microsoft.Storage", label: "Microsoft.Storage", description: "Azure Storage (Blob, File, Queue, Table)" },
+  { value: "Microsoft.KeyVault", label: "Microsoft.KeyVault", description: "Azure Key Vault" },
+  { value: "Microsoft.Sql", label: "Microsoft.Sql", description: "Azure SQL Database" },
+  { value: "Microsoft.EventHub", label: "Microsoft.EventHub", description: "Azure Event Hubs" },
+  { value: "Microsoft.ServiceBus", label: "Microsoft.ServiceBus", description: "Azure Service Bus" },
+  { value: "Microsoft.AzureCosmosDB", label: "Microsoft.AzureCosmosDB", description: "Azure Cosmos DB" },
+  { value: "Microsoft.AzureActiveDirectory", label: "Microsoft.AzureActiveDirectory", description: "Azure Active Directory" },
+  { value: "Microsoft.ContainerRegistry", label: "Microsoft.ContainerRegistry", description: "Azure Container Registry" },
+  { value: "Microsoft.Web", label: "Microsoft.Web", description: "Azure App Service / Functions" },
+  { value: "Microsoft.CognitiveServices", label: "Microsoft.CognitiveServices", description: "Azure AI Services" },
+];
 
 export const CONDITIONAL_FIELD_VISIBILITY: {
   toggle: string;

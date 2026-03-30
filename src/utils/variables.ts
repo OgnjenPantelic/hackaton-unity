@@ -1,6 +1,6 @@
 import { TerraformVariable } from "../types";
 import { EXCLUDE_VARIABLES, VARIABLE_DISPLAY_NAMES, DEFAULTS } from "../constants";
-import { computeAwsSubnets } from "./cidr";
+import { computeAwsSubnets, computeAzurePlSubnets } from "./cidr";
 
 function isValidJson(s: string): boolean {
   try { JSON.parse(s); return true; } catch { return false; }
@@ -145,11 +145,19 @@ export function groupVariablesBySection(
     resource_group_name: "Workspace",
     resource_prefix: "Workspace",
     resource_suffix: "Workspace",
+    // Azure PL: resource group fields
+    create_data_plane_resource_group: "Workspace",
+    existing_data_plane_resource_group_name: "Workspace",
 
     // Tags
     tags: "Tags",
 
     // Advanced: Network Configuration (all network + existing resource fields)
+    // Azure PL: network fields
+    cidr_dp: "Advanced: Network Configuration",
+    subnet_workspace_cidrs: "Advanced: Network Configuration",
+    subnet_private_endpoint_cidr: "Advanced: Network Configuration",
+    subnets_service_endpoints: "Advanced: Network Configuration",
     vpc_id: "Advanced: Network Configuration",
     vpc_cidr_range: "Advanced: Network Configuration",
     create_new_vpc: "Advanced: Network Configuration",
@@ -371,7 +379,7 @@ export function initializeFormDefaults(
       defaults[v.name] = context.azureUser;
     } else if (v.name === "admin_user" && context.gcpAccount) {
       defaults[v.name] = context.gcpAccount;
-    } else if (v.name === "create_new_resource_group") {
+    } else if (v.name === "create_new_resource_group" || v.name === "create_data_plane_resource_group") {
       defaults[v.name] = true;
     } else if (v.name === "vnet_name" || v.name === "vnet_resource_group_name") {
       defaults[v.name] = "";
@@ -441,6 +449,16 @@ export function initializeFormDefaults(
   if (!defaults["private_subnets_cidr_2"]) defaults["private_subnets_cidr_2"] = "10.0.64.0/18";
   if (!defaults["privatelink_subnets_cidr_1"]) defaults["privatelink_subnets_cidr_1"] = "10.0.128.0/28";
   if (!defaults["privatelink_subnets_cidr_2"]) defaults["privatelink_subnets_cidr_2"] = "10.0.128.16/28";
+
+  // Pre-populate Azure PL subnet sub-fields from cidr_dp default
+  if (defaults["cidr_dp"]) {
+    const plSubnets = computeAzurePlSubnets(defaults["cidr_dp"]);
+    if (plSubnets) {
+      if (!defaults["subnet_workspace_cidrs_0"]) defaults["subnet_workspace_cidrs_0"] = plSubnets.publicCidr;
+      if (!defaults["subnet_workspace_cidrs_1"]) defaults["subnet_workspace_cidrs_1"] = plSubnets.privateCidr;
+      if (!defaults["subnet_private_endpoint_cidr"]) defaults["subnet_private_endpoint_cidr"] = plSubnets.privateEndpointCidr;
+    }
+  }
 
   return defaults;
 }

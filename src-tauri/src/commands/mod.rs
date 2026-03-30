@@ -201,7 +201,7 @@ pub struct UCPermissionCheck {
 // ─── Constants ──────────────────────────────────────────────────────────────
 
 /// Increment when embedded templates change to trigger a refresh.
-pub(crate) const TEMPLATES_VERSION: &str = "2.72.0";
+pub(crate) const TEMPLATES_VERSION: &str = "2.75.0";
 
 /// Variables that are automatically set by the app and hidden from the UI form.
 pub(crate) const INTERNAL_VARIABLES: &[&str] = &[
@@ -211,6 +211,7 @@ pub(crate) const INTERNAL_VARIABLES: &[&str] = &[
     "spoke_workspace_url_override",
     "workspace_url_override",
     "workspace_sku",
+    "az_subscription",
 ];
 
 // ─── Helper Functions ───────────────────────────────────────────────────────

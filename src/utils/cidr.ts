@@ -36,6 +36,33 @@ export function computeSubnets(vnetCidr: string): { publicCidr: string; privateC
 }
 
 /**
+ * Compute Azure PL subnets from a VNet CIDR:
+ * - 2 workspace subnets (public, private) each at VNet prefix + 8 bits (e.g. /16 → /24)
+ * - 1 private endpoint subnet at /26 placed after the workspace subnets
+ */
+export function computeAzurePlSubnets(vnetCidr: string): {
+  publicCidr: string;
+  privateCidr: string;
+  privateEndpointCidr: string;
+} | null {
+  const parsed = parseCidr(vnetCidr);
+  if (!parsed || parsed.prefixLen > 24) return null;
+
+  const wsPrefix = Math.min(parsed.prefixLen + 2, 26);
+  const wsSize = Math.pow(2, 32 - wsPrefix);
+
+  const publicStart = parsed.networkAddr;
+  const privateStart = (publicStart + wsSize) >>> 0;
+  const peStart = (privateStart + wsSize) >>> 0;
+
+  return {
+    publicCidr: `${intToIp(publicStart)}/${wsPrefix}`,
+    privateCidr: `${intToIp(privateStart)}/${wsPrefix}`,
+    privateEndpointCidr: `${intToIp(peStart)}/26`,
+  };
+}
+
+/**
  * Compute AWS subnets from a VPC CIDR:
  * - 2 private subnets at VPC+2 (each 1/4 of VPC, for Databricks compute)
  * - 1 public /28 subnet for NAT gateway, placed at the VPC midpoint
