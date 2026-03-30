@@ -250,6 +250,70 @@ fn apply_aws_credentials(cmd: &mut std::process::Command, credentials: &CloudCre
     Ok(())
 }
 
+/// AWS VPC descriptor for CIDR overlap detection.
+#[derive(Debug, Clone, Serialize)]
+pub struct AwsVpc {
+    pub vpc_id: String,
+    pub name: String,
+    pub cidr_block: String,
+}
+
+/// List AWS VPCs in a region. Supports both profile and access-key auth via CloudCredentials.
+#[tauri::command]
+pub async fn get_aws_vpcs(credentials: CloudCredentials) -> Result<Vec<AwsVpc>, String> {
+    let aws_cli = match dependencies::find_aws_cli_path() {
+        Some(path) => path,
+        None => return Ok(vec![]),
+    };
+
+    let region = credentials
+        .aws_region
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .cloned()
+        .unwrap_or_else(|| "us-east-1".to_string());
+
+    let mut cmd = super::silent_cmd(&aws_cli);
+    cmd.args(["ec2", "describe-vpcs", "--region", &region, "--output", "json"]);
+    apply_aws_credentials(&mut cmd, &credentials)?;
+
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to run AWS CLI: {}", e))?;
+
+    if !output.status.success() {
+        return Ok(vec![]);
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json: serde_json::Value =
+        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse VPCs: {}", e))?;
+
+    let empty = vec![];
+    let vpcs: Vec<AwsVpc> = json["Vpcs"]
+        .as_array()
+        .unwrap_or(&empty)
+        .iter()
+        .map(|v| {
+            let name = v["Tags"]
+                .as_array()
+                .and_then(|tags| {
+                    tags.iter().find(|t| t["Key"].as_str() == Some("Name"))
+                        .and_then(|t| t["Value"].as_str())
+                })
+                .unwrap_or("")
+                .to_string();
+            AwsVpc {
+                vpc_id: v["VpcId"].as_str().unwrap_or("").to_string(),
+                name,
+                cidr_block: v["CidrBlock"].as_str().unwrap_or("").to_string(),
+            }
+        })
+        .collect();
+
+    Ok(vpcs)
+}
+
 /// Check AWS IAM permissions using the IAM Policy Simulator.
 #[tauri::command]
 pub async fn check_aws_permissions(

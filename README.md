@@ -15,6 +15,7 @@ Desktop app for deploying Databricks workspaces on AWS, Azure, and GCP using Ter
 - Rollback support (terraform destroy with resource cleanup)
 - Auto-import and retry when Terraform hits "resource already exists" errors — automatically runs `terraform import` and retries `apply` (up to 3 rounds) for Azure resources, Databricks Private Endpoint rules, and network connectivity configs
 - Resource name conflict detection for Azure — warns before deployment if resource groups already exist
+- AWS Standard template includes S3, STS, and Kinesis VPC endpoints for private connectivity
 
 ### Authentication
 - Supports CLI profiles, SSO, and service principal authentication
@@ -25,6 +26,8 @@ Desktop app for deploying Databricks workspaces on AWS, Azure, and GCP using Ter
 
 ### Networking & Proxy
 - VNet injection (Azure) / BYOVPC (AWS) / Customer-managed VPC (GCP)
+- CIDR overlap detection — warns if entered VNet/VPC CIDR overlaps existing networks in the same region
+- Auto-computed subnets from VNet/VPC CIDR across all templates (Azure, AWS, GCP)
 - Connectivity check for Terraform registries with corporate proxy detection
 - System proxy auto-detection (macOS/Windows) injected into Terraform and HTTP requests
 
@@ -68,6 +71,7 @@ Desktop app for deploying Databricks workspaces on AWS, Azure, and GCP using Ter
 | `aws-simple` | AWS Standard BYOVPC | AWS | Standard workspace with customer-managed VPC ([README](src-tauri/templates/aws-simple/README.md)) |
 | `aws-sra` | AWS Security Reference Architecture | AWS | Enterprise-grade security with PrivateLink, CMK encryption, and compliance controls |
 | `azure-simple` | Azure Standard VNet | Azure | Standard workspace with VNet injection ([README](src-tauri/templates/azure-simple/README.md)) |
+| `azure-pl-sts` | Azure Private Link | Azure | Private Link workspace with backend and DBFS private endpoints, DNS zones, and serverless NCC |
 | `azure-sra` | Azure Security Reference Architecture | Azure | Enterprise-grade hub-spoke deployment with Private Endpoints and CMK encryption |
 | `gcp-simple` | GCP Standard BYOVPC | GCP | Standard workspace with customer-managed VPC ([README](src-tauri/templates/gcp-simple/README.md)) |
 | `gcp-sra` | GCP Security Reference Architecture | GCP | Enterprise-grade security with Private Service Connect, CMEK, and hardened firewall ([README](src-tauri/templates/gcp-sra/readme.md)) |
@@ -289,7 +293,7 @@ src-tauri/                    # Rust backend
   resources/
     assistant-knowledge.md    # Embedded knowledge base for AI assistant
   templates/                  # Terraform templates (aws-simple, aws-sra, azure-simple,
-                              # azure-sra, gcp-simple, gcp-sra)
+                              # azure-pl-sts, azure-sra, gcp-simple, gcp-sra)
 ```
 
 ## Version Management & Releases

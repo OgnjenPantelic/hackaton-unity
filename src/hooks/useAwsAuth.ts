@@ -1,11 +1,12 @@
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AwsProfile, AwsIdentity, CloudCredentials, CloudPermissionCheck } from "../types";
+import { AwsProfile, AwsIdentity, AwsVpc, CloudCredentials, CloudPermissionCheck } from "../types";
 
 export interface UseAwsAuthReturn {
   // State
   profiles: AwsProfile[];
   identity: AwsIdentity | null;
+  vpcs: AwsVpc[];
   authMode: "profile" | "keys";
   loading: boolean;
   loginInProgress: boolean;
@@ -19,6 +20,7 @@ export interface UseAwsAuthReturn {
   setPermissionCheck: (check: CloudPermissionCheck | null) => void;
   setCheckingPermissions: (checking: boolean) => void;
   loadProfiles: () => Promise<AwsProfile[]>;
+  loadVpcs: (credentials: CloudCredentials) => Promise<void>;
   checkIdentity: (profile: string) => Promise<void>;
   handleSsoLogin: (profile: string) => Promise<void>;
   cancelSsoLogin: () => Promise<void>;
@@ -39,7 +41,17 @@ export function useAwsAuth(): UseAwsAuthReturn {
   const [loginInProgress, setLoginInProgress] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [permissionCheck, setPermissionCheck] = useState<CloudPermissionCheck | null>(null);
+  const [vpcs, setVpcs] = useState<AwsVpc[]>([]);
   const [checkingPermissions, setCheckingPermissions] = useState(false);
+
+  const loadVpcs = useCallback(async (credentials: CloudCredentials) => {
+    try {
+      const vpcList = await invoke<AwsVpc[]>("get_aws_vpcs", { credentials });
+      setVpcs(vpcList);
+    } catch {
+      // Best-effort: don't block the user if VPC listing fails
+    }
+  }, []);
 
   const clearError = useCallback(() => {
     setError(null);
@@ -158,6 +170,7 @@ export function useAwsAuth(): UseAwsAuthReturn {
   return {
     profiles,
     identity,
+    vpcs,
     authMode,
     loading,
     loginInProgress,
@@ -169,6 +182,7 @@ export function useAwsAuth(): UseAwsAuthReturn {
     setPermissionCheck,
     setCheckingPermissions,
     loadProfiles,
+    loadVpcs,
     checkIdentity,
     handleSsoLogin,
     cancelSsoLogin,

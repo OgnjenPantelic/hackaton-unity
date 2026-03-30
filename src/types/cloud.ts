@@ -68,6 +68,12 @@ export interface GcpValidation {
   impersonated_account: string | null;
 }
 
+export interface AwsVpc {
+  vpc_id: string;
+  name: string;
+  cidr_block: string;
+}
+
 export interface AzureVnet {
   name: string;
   resource_group: string;

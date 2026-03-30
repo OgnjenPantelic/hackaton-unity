@@ -10,6 +10,7 @@ function stubAwsAuth(overrides: Partial<UseAwsAuthReturn> = {}): UseAwsAuthRetur
   return {
     profiles: [],
     identity: null,
+    vpcs: [],
     authMode: "profile",
     loading: false,
     loginInProgress: false,
@@ -21,6 +22,7 @@ function stubAwsAuth(overrides: Partial<UseAwsAuthReturn> = {}): UseAwsAuthRetur
     setPermissionCheck: vi.fn(),
     setCheckingPermissions: vi.fn(),
     loadProfiles: vi.fn().mockResolvedValue([]),
+    loadVpcs: vi.fn().mockResolvedValue(undefined),
     checkIdentity: vi.fn().mockResolvedValue(undefined),
     handleSsoLogin: vi.fn().mockResolvedValue(undefined),
     cancelSsoLogin: vi.fn().mockResolvedValue(undefined),

@@ -353,6 +353,9 @@ export function WizardProvider({ children }: { children: ReactNode }) {
           loadAzureResourceGroups();
           loadAzureVnets();
         }
+        if (selectedCloud === CLOUDS.AWS) {
+          aws.loadVpcs(credentialsRef.current);
+        }
       } catch (e: unknown) {
         if (templateRequestRef.current !== requestId) return;
         setError(`Failed to load template: ${String(e)}`);

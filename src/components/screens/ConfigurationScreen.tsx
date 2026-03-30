@@ -68,10 +68,12 @@ export function ConfigurationScreen() {
     setScreen, goBack,
     startDeploymentWizard,
     credentials,
+    aws,
     azure,
   } = useWizard();
   const azureResourceGroups = azure.resourceGroups;
   const azureVnets = azure.vnets;
+  const awsVpcs = aws.vpcs;
   const [showTags, setShowTags] = usePersistedCollapse("tags", false);
   const [showSecurity, setShowSecurity] = usePersistedCollapse("security", false);
   const [showMetastore, setShowMetastore] = usePersistedCollapse("metastore", false);
@@ -309,6 +311,26 @@ export function ConfigurationScreen() {
     if (!hub || !ws || !parseCidr(hub) || !parseCidr(ws)) return false;
     return cidrsOverlap(hub, ws);
   }, [selectedTemplate?.id, formValues["hub_vnet_cidr"], formValues["workspace_vnet__cidr"]]);
+
+  const findVpcOverlap = (cidr: string) => {
+    if (!parseCidr(cidr)) return null;
+    for (const vpc of awsVpcs) {
+      if (cidrsOverlap(cidr, vpc.cidr_block)) {
+        return { vpcId: vpc.vpc_id, name: vpc.name, cidr: vpc.cidr_block };
+      }
+    }
+    return null;
+  };
+
+  const vpcOverlap = useMemo(() => {
+    if (selectedCloud !== CLOUDS.AWS || !formValues["cidr_block"]) return null;
+    return findVpcOverlap(formValues["cidr_block"]);
+  }, [selectedCloud, formValues["cidr_block"], awsVpcs]);
+
+  const vpcOverlapSra = useMemo(() => {
+    if (selectedTemplate?.id !== "aws-sra" || !formValues["vpc_cidr_range"]) return null;
+    return findVpcOverlap(formValues["vpc_cidr_range"]);
+  }, [selectedTemplate?.id, formValues["vpc_cidr_range"], awsVpcs]);
 
   // Field visibility and validation depend on cloud and network toggles:
   // - AWS: createNewVpc controls new VPC vs existing VPC fields
@@ -1402,6 +1424,16 @@ export function ConfigurationScreen() {
         {variable.name === "cidr_dp" && vnetOverlapPl && (
           <div className="help-text" style={{ color: "#ffb347" }}>
             ⚠ This range overlaps with existing VNet &quot;{vnetOverlapPl.vnetName}&quot; ({vnetOverlapPl.cidr}) in {vnetOverlapPl.resourceGroup}
+          </div>
+        )}
+        {variable.name === "cidr_block" && vpcOverlap && (
+          <div className="help-text" style={{ color: "#ffb347" }}>
+            ⚠ This range overlaps with existing VPC{vpcOverlap.name ? ` "${vpcOverlap.name}"` : ""} ({vpcOverlap.cidr}) {vpcOverlap.vpcId}
+          </div>
+        )}
+        {variable.name === "vpc_cidr_range" && vpcOverlapSra && (
+          <div className="help-text" style={{ color: "#ffb347" }}>
+            ⚠ This range overlaps with existing VPC{vpcOverlapSra.name ? ` "${vpcOverlapSra.name}"` : ""} ({vpcOverlapSra.cidr}) {vpcOverlapSra.vpcId}
           </div>
         )}
         {(variable.name === "subnet_public_cidr" || variable.name === "subnet_private_cidr") && subnetOverlap && (

@@ -42,6 +42,7 @@ pub fn run() {
             commands::get_aws_profiles,
             commands::get_aws_identity,
             commands::aws_sso_login,
+            commands::get_aws_vpcs,
             commands::get_azure_account,
             commands::get_azure_subscriptions,
             commands::get_azure_resource_groups,

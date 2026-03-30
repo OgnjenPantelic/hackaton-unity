@@ -2,6 +2,7 @@ export type {
   CloudCredentials,
   AwsProfile,
   AwsIdentity,
+  AwsVpc,
   AzureSubscription,
   AzureAccount,
   AzureVnet,
