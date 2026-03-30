@@ -262,20 +262,37 @@ export function ConfigurationScreen() {
   };
 
   // Check if the entered VNet CIDR overlaps with any existing Azure VNets
-  const vnetOverlap = useMemo(() => {
-    if (selectedCloud !== CLOUDS.AZURE || !formValues["cidr"]) return null;
-    const enteredCidr = formValues["cidr"];
-    if (!parseCidr(enteredCidr)) return null;
-
+  const findVnetOverlap = (cidr: string) => {
+    if (!parseCidr(cidr)) return null;
     for (const vnet of azureVnets) {
       for (const prefix of vnet.address_prefixes) {
-        if (cidrsOverlap(enteredCidr, prefix)) {
+        if (cidrsOverlap(cidr, prefix)) {
           return { vnetName: vnet.name, resourceGroup: vnet.resource_group, cidr: prefix };
         }
       }
     }
     return null;
+  };
+
+  const vnetOverlap = useMemo(() => {
+    if (selectedCloud !== CLOUDS.AZURE || !formValues["cidr"]) return null;
+    return findVnetOverlap(formValues["cidr"]);
   }, [selectedCloud, formValues["cidr"], azureVnets]);
+
+  const vnetOverlapPl = useMemo(() => {
+    if (selectedTemplate?.id !== "azure-pl-sts" || !formValues["cidr_dp"]) return null;
+    return findVnetOverlap(formValues["cidr_dp"]);
+  }, [selectedTemplate?.id, formValues["cidr_dp"], azureVnets]);
+
+  const vnetOverlapSraHub = useMemo(() => {
+    if (selectedTemplate?.id !== "azure-sra" || !formValues["hub_vnet_cidr"]) return null;
+    return findVnetOverlap(formValues["hub_vnet_cidr"]);
+  }, [selectedTemplate?.id, formValues["hub_vnet_cidr"], azureVnets]);
+
+  const vnetOverlapSraWs = useMemo(() => {
+    if (selectedTemplate?.id !== "azure-sra" || !formValues["workspace_vnet__cidr"]) return null;
+    return findVnetOverlap(formValues["workspace_vnet__cidr"]);
+  }, [selectedTemplate?.id, formValues["workspace_vnet__cidr"], azureVnets]);
 
   const subnetOverlap = useMemo(() => {
     if (selectedCloud !== CLOUDS.AZURE) return false;
@@ -846,6 +863,11 @@ export function ConfigurationScreen() {
           ⚠ Workspace VNet CIDR overlaps with the Hub VNet CIDR. They must be non-overlapping ranges.
         </div>
       )}
+      {sf.key === "workspace_vnet__cidr" && !formValidation.fieldErrors["workspace_vnet__cidr"] && vnetOverlapSraWs && (
+        <div className="help-text" style={{ color: "#ffb347" }}>
+          ⚠ This range overlaps with existing VNet &quot;{vnetOverlapSraWs.vnetName}&quot; ({vnetOverlapSraWs.cidr}) in {vnetOverlapSraWs.resourceGroup}
+        </div>
+      )}
     </div>
   );};
 
@@ -1377,6 +1399,11 @@ export function ConfigurationScreen() {
             ⚠ This range overlaps with existing VNet &quot;{vnetOverlap.vnetName}&quot; ({vnetOverlap.cidr}) in {vnetOverlap.resourceGroup}
           </div>
         )}
+        {variable.name === "cidr_dp" && vnetOverlapPl && (
+          <div className="help-text" style={{ color: "#ffb347" }}>
+            ⚠ This range overlaps with existing VNet &quot;{vnetOverlapPl.vnetName}&quot; ({vnetOverlapPl.cidr}) in {vnetOverlapPl.resourceGroup}
+          </div>
+        )}
         {(variable.name === "subnet_public_cidr" || variable.name === "subnet_private_cidr") && subnetOverlap && (
           <div className="help-text" style={{ color: "#ffb347" }}>
             ⚠ Public and private subnet CIDRs overlap. They must be non-overlapping ranges within the VNet.
@@ -1385,6 +1412,11 @@ export function ConfigurationScreen() {
         {variable.name === "hub_vnet_cidr" && !formValidation.fieldErrors["hub_vnet_cidr"] && sraVnetOverlap && (
           <div className="help-text" style={{ color: "#ffb347" }}>
             ⚠ Hub VNet CIDR overlaps with the Workspace VNet CIDR. They must be non-overlapping ranges.
+          </div>
+        )}
+        {variable.name === "hub_vnet_cidr" && !formValidation.fieldErrors["hub_vnet_cidr"] && vnetOverlapSraHub && (
+          <div className="help-text" style={{ color: "#ffb347" }}>
+            ⚠ This range overlaps with existing VNet &quot;{vnetOverlapSraHub.vnetName}&quot; ({vnetOverlapSraHub.cidr}) in {vnetOverlapSraHub.resourceGroup}
           </div>
         )}
         {!formValidation.fieldErrors[variable.name] && (() => {
