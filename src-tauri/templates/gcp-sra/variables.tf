@@ -48,7 +48,7 @@ variable "workspace_name" {
 variable "nodes_ip_cidr_range" {
   description = "CIDR range for workspace nodes. Cannot be changed after creation. See https://docs.databricks.com/gcp/en/admin/cloud-configurations/gcp/network-sizing"
   type        = string
-  default     = "10.0.0.0/16"
+  default     = "10.0.0.0/20"
 }
 
 variable "use_existing_vpc" {

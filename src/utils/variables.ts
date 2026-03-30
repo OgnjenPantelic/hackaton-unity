@@ -422,8 +422,8 @@ export function initializeFormDefaults(
       defaults[v.name] = "";
     } else if (v.name === "relay_service_attachment" || v.name === "workspace_service_attachment") {
       defaults[v.name] = "";
-    } else if (v.name === "nodes_ip_cidr_range") {
-      defaults[v.name] = "10.0.0.0/16";
+    } else if (v.name === "nodes_ip_cidr_range" || v.name === "subnet_cidr") {
+      defaults[v.name] = "10.0.0.0/20";
     } else if (v.name === "google_pe_subnet_ip_cidr_range") {
       defaults[v.name] = "10.3.0.0/24";
     } else if (v.name === "regional_metastore_id") {

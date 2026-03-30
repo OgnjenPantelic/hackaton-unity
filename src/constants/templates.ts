@@ -167,7 +167,7 @@ export const VARIABLE_DESCRIPTION_OVERRIDES: Record<string, string> = {
   create_data_plane_resource_group: "Create a new resource group for data plane resources, or use an existing one.",
   existing_data_plane_resource_group_name: "Name of the existing resource group to deploy data plane resources into.",
   // Network - GCP
-  subnet_cidr: "CIDR range for the Databricks subnet (e.g., 10.0.0.0/16).",
+  subnet_cidr: "CIDR range for the Databricks subnet (e.g., 10.0.0.0/20). Recommended: /19–/25.",
   // Advanced
   existing_vpc_id: "Use an existing VPC instead of creating a new one. Leave empty for auto-creation.",
   existing_subnet_ids: "Use existing subnets. Required if using an existing VPC.",
@@ -251,6 +251,8 @@ export const PLACEHOLDER_OVERRIDES: Record<string, string> = {
   existing_ncc_id: "5a29629b-8098-43e8-87c8-26ec05211924",
   existing_ncc_name: "ncc-eastus-hub1abc",
   existing_network_policy_id: "np-hub1abc-restrictive",
+  subnet_cidr: "10.0.0.0/20",
+  nodes_ip_cidr_range: "10.0.0.0/20",
 };
 
 export const EXCLUDE_VARIABLES = [

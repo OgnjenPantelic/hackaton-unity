@@ -589,6 +589,39 @@ export function ConfigurationScreen() {
       }
     }
 
+    // GCP: subnet CIDR must be within /9–/29 (Databricks hard requirement)
+    for (const gcpCidrField of ["subnet_cidr", "nodes_ip_cidr_range"]) {
+      const val = formValues[gcpCidrField];
+      if (val && typeof val === "string") {
+        const p = parseCidr(val);
+        if (p && (p.prefixLen < 9 || p.prefixLen > 29)) {
+          fieldErrors[gcpCidrField] = `CIDR prefix /${p.prefixLen} is outside the allowed /9–/29 range.`;
+        }
+      }
+    }
+
+    // GCP: label keys/values must follow Google Cloud restrictions
+    if (selectedCloud === CLOUDS.GCP) {
+      const gcpLabelPattern = /^[a-z][a-z0-9_-]*$/;
+      const gcpValuePattern = /^[a-z0-9_-]*$/;
+      const nonDefaultTags = tagPairs.filter(t => t.key !== "databricks_deployer_template" && t.key.trim() !== "");
+      if (nonDefaultTags.length > 63) {
+        fieldErrors["tags"] = `GCP allows a maximum of 64 labels per resource (1 is reserved for the deployer tag).`;
+      }
+      for (const tag of nonDefaultTags) {
+        if (tag.key.length > 63) {
+          fieldErrors["tags"] = fieldErrors["tags"] || `Label key "${tag.key.slice(0, 20)}…" exceeds 63-character limit.`;
+        } else if (!gcpLabelPattern.test(tag.key)) {
+          fieldErrors["tags"] = fieldErrors["tags"] || `Label key "${tag.key}" is invalid. Keys must start with a lowercase letter and contain only lowercase letters, numbers, underscores, and dashes.`;
+        }
+        if (tag.value.length > 63) {
+          fieldErrors["tags"] = fieldErrors["tags"] || `Label value "${tag.value.slice(0, 20)}…" exceeds 63-character limit.`;
+        } else if (tag.value && !gcpValuePattern.test(tag.value)) {
+          fieldErrors["tags"] = fieldErrors["tags"] || `Label value "${tag.value}" is invalid. Values must contain only lowercase letters, numbers, underscores, and dashes.`;
+        }
+      }
+    }
+
     // Azure SRA: compliance standards require compliance_security_profile_enabled
     if (isAzureSra) {
       const cspEnabled = formValues["wsc__csp_enabled"] === true || formValues["wsc__csp_enabled"] === "true";
@@ -649,7 +682,7 @@ export function ConfigurationScreen() {
       requiredFields: [...requiredVars.map(v => v.name), ...conditionallyRequired],
       fieldErrors,
     };
-  }, [variables, formValues, hiddenFields, conditionallyRequired]);
+  }, [variables, formValues, hiddenFields, conditionallyRequired, tagPairs, selectedCloud]);
 
   const sections = useMemo(
     () => groupVariablesBySection(variables, selectedTemplate?.id),
@@ -1353,20 +1386,36 @@ export function ConfigurationScreen() {
               <span className="cidr-tooltip-wrapper">
                 <span className="cidr-tooltip-icon">?</span>
                 <span className="cidr-tooltip">
-                  <span className="cidr-tooltip-title">IP Address Requirements</span>
-                  <span className="cidr-tooltip-subtitle">Nodes = The maximum number of nodes that can be active <strong>concurrently</strong> in your workspace.</span>
-                  <table className="cidr-tooltip-table">
-                    <thead><tr><th>Subnet</th><th>IPs</th><th>Nodes</th></tr></thead>
-                    <tbody>
-                      {[17,18,19,20,21,22,23,24,25,26].map(p => (
-                        <tr key={p} className={p === fieldParsed.prefixLen ? "cidr-tooltip-active" : ""}>
-                          <td>/{p}</td>
-                          <td>{Math.pow(2, 32 - p).toLocaleString()}</td>
-                          <td>{getUsableNodes(p).toLocaleString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {(variable.name === "subnet_cidr" || variable.name === "nodes_ip_cidr_range") ? (<>
+                    <span className="cidr-tooltip-title">GCP Subnet Sizing</span>
+                    <span className="cidr-tooltip-subtitle">Max concurrent Databricks nodes per workspace. <a href="https://docs.databricks.com/gcp/en/admin/cloud-configurations/gcp/network-sizing#quick-sizing-guideline" target="_blank" rel="noopener noreferrer" style={{ color: "#6ea8fe" }}>Docs ↗</a></span>
+                    <table className="cidr-tooltip-table">
+                      <thead><tr><th>Subnet</th><th>Max Nodes</th></tr></thead>
+                      <tbody>
+                        {([{p:19,n:4000},{p:20,n:2000},{p:21,n:1000},{p:22,n:500},{p:23,n:250},{p:24,n:120},{p:25,n:60}] as const).map(({p,n}) => (
+                          <tr key={p} className={p === fieldParsed.prefixLen ? "cidr-tooltip-active" : ""}>
+                            <td>/{p}</td>
+                            <td>{n.toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>) : (<>
+                    <span className="cidr-tooltip-title">IP Address Requirements</span>
+                    <span className="cidr-tooltip-subtitle">Nodes = The maximum number of nodes that can be active <strong>concurrently</strong> in your workspace.</span>
+                    <table className="cidr-tooltip-table">
+                      <thead><tr><th>Subnet</th><th>IPs</th><th>Nodes</th></tr></thead>
+                      <tbody>
+                        {[17,18,19,20,21,22,23,24,25,26].map(p => (
+                          <tr key={p} className={p === fieldParsed.prefixLen ? "cidr-tooltip-active" : ""}>
+                            <td>/{p}</td>
+                            <td>{Math.pow(2, 32 - p).toLocaleString()}</td>
+                            <td>{getUsableNodes(p).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>)}
                 </span>
               </span>
             )}
@@ -1403,8 +1452,8 @@ export function ConfigurationScreen() {
             warn = `⚠ Subnet /${p.prefixLen} is smaller than the Databricks recommended minimum of /26.`;
           else if (variable.name === "hub_vnet_cidr" && (p.prefixLen < 16 || p.prefixLen > 24))
             warn = `⚠ Hub VNet prefix /${p.prefixLen} is outside the recommended /16–/24 range.`;
-          else if (variable.name === "subnet_cidr" && (p.prefixLen < 16 || p.prefixLen > 26))
-            warn = `⚠ Subnet prefix /${p.prefixLen} is outside the recommended /16–/26 range. Databricks recommends /19–/25 for optimal sizing.`;
+          else if ((variable.name === "subnet_cidr" || variable.name === "nodes_ip_cidr_range") && (p.prefixLen < 19 || p.prefixLen > 25))
+            warn = `⚠ Subnet prefix /${p.prefixLen} is outside the recommended /19–/25 range (60–4,000 nodes). Valid range is /9–/29.`;
           if (!warn) return null;
           return <div className="help-text" style={{ color: "#ffb347" }}>{warn}</div>;
         })()}
@@ -1528,28 +1577,53 @@ export function ConfigurationScreen() {
                       <div className="tags-editor">
                         {tagPairs.map((tag, index) => {
                           const isDefault = tag.key === "databricks_deployer_template";
+                          const isGcp = selectedCloud === CLOUDS.GCP;
+                          const gcpLabelPattern = /^[a-z][a-z0-9_-]*$/;
+                          const gcpValuePattern = /^[a-z0-9_-]*$/;
+                          const keyErr = isGcp && !isDefault && tag.key.trim() !== "" ? (
+                            tag.key.length > 63 ? "Max 63 characters" :
+                            !gcpLabelPattern.test(tag.key) ? "Lowercase letters, numbers, _ and - only. Must start with a letter." : null
+                          ) : null;
+                          const valErr = isGcp && !isDefault && tag.value ? (
+                            tag.value.length > 63 ? "Max 63 characters" :
+                            !gcpValuePattern.test(tag.value) ? "Lowercase letters, numbers, _ and - only." : null
+                          ) : null;
                           return (
-                            <div key={index} style={{ display: "flex", gap: "8px", marginBottom: "8px", alignItems: "center" }}>
-                              <input type="text" autoCapitalize="none" autoCorrect="off" spellCheck={false}
-                                value={tag.key} onChange={(e) => handleTagChange(index, "key", e.target.value)}
-                                placeholder="Key (e.g., Environment)" style={{ flex: 1, ...(isDefault ? { opacity: 0.6 } : {}) }}
-                                disabled={isDefault} />
-                              <input type="text" autoCapitalize="none" autoCorrect="off" spellCheck={false}
-                                value={tag.value} onChange={(e) => handleTagChange(index, "value", e.target.value)}
-                                placeholder="Value (e.g., Production)" style={{ flex: 1, ...(isDefault ? { opacity: 0.6 } : {}) }}
-                                disabled={isDefault} />
-                              {isDefault ? (
-                                <span style={{ width: "34px", textAlign: "center", fontSize: "14px", color: "#555" }}
-                                  title="Default tag (read-only)">🔒</span>
-                              ) : (
-                                <button type="button" onClick={() => removeTag(index)}
-                                  style={{ background: "transparent", border: "1px solid #555", color: "#e74c3c",
-                                    borderRadius: "4px", padding: "6px 10px", cursor: "pointer", fontSize: "14px" }}
-                                  title="Remove tag">×</button>
+                            <div key={index} style={{ marginBottom: "8px" }}>
+                              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                                <input type="text" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                                  value={tag.key} onChange={(e) => handleTagChange(index, "key", e.target.value)}
+                                  placeholder="Key (e.g., environment)" style={{ flex: 1, ...(isDefault ? { opacity: 0.6 } : {}), ...(keyErr ? { borderColor: "#e74c3c" } : {}) }}
+                                  disabled={isDefault} />
+                                <input type="text" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                                  value={tag.value} onChange={(e) => handleTagChange(index, "value", e.target.value)}
+                                  placeholder="Value (e.g., production)" style={{ flex: 1, ...(isDefault ? { opacity: 0.6 } : {}), ...(valErr ? { borderColor: "#e74c3c" } : {}) }}
+                                  disabled={isDefault} />
+                                {isDefault ? (
+                                  <span style={{ width: "34px", textAlign: "center", fontSize: "14px", color: "#555" }}
+                                    title="Default tag (read-only)">🔒</span>
+                                ) : (
+                                  <button type="button" onClick={() => removeTag(index)}
+                                    style={{ background: "transparent", border: "1px solid #555", color: "#e74c3c",
+                                      borderRadius: "4px", padding: "6px 10px", cursor: "pointer", fontSize: "14px" }}
+                                    title="Remove tag">×</button>
+                                )}
+                              </div>
+                              {(keyErr || valErr) && (
+                                <div style={{ color: "#e74c3c", fontSize: "0.8em", marginTop: "2px", paddingLeft: "2px" }}>
+                                  {keyErr && <span>Key: {keyErr}</span>}
+                                  {keyErr && valErr && <span> · </span>}
+                                  {valErr && <span>Value: {valErr}</span>}
+                                </div>
                               )}
                             </div>
                           );
                         })}
+                        {selectedCloud === CLOUDS.GCP && (
+                          <div className="help-text" style={{ fontSize: "0.8em", marginBottom: "8px" }}>
+                            GCP labels: lowercase letters, numbers, underscores, dashes. Keys must start with a letter. Max 63 chars each.
+                          </div>
+                        )}
                         <button type="button" onClick={addTag}
                           style={{ background: "transparent", border: "1px dashed #555", color: "#888",
                             borderRadius: "4px", padding: "8px 16px", cursor: "pointer", fontSize: "13px", width: "100%" }}>
@@ -1629,7 +1703,7 @@ export function ConfigurationScreen() {
                 onContinue();
               }
             }} 
-            disabled={loading || checkingNames}
+            disabled={loading || checkingNames || Object.keys(formValidation.fieldErrors).length > 0}
           >
             {loading || checkingNames ? (
               <>
