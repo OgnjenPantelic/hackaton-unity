@@ -92,9 +92,9 @@ variable "existing_metastore_id" {
 # =============================================================================
 
 variable "subnet_cidr" {
-  description = "CIDR block for the Databricks subnet (e.g., 10.0.0.0/16)"
+  description = "CIDR block for the Databricks subnet (e.g., 10.0.0.0/20). Recommended: /19-/25."
   type        = string
-  default     = "10.0.0.0/16"
+  default     = "10.0.0.0/20"
 }
 
 # =============================================================================

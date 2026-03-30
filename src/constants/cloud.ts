@@ -80,34 +80,20 @@ export const GCP_REGIONS: { value: string; label: string }[] = [
   { value: "us-east1", label: "US East (South Carolina)" },
   { value: "us-east4", label: "US East (N. Virginia)" },
   { value: "us-west1", label: "US West (Oregon)" },
-  { value: "us-west2", label: "US West (Los Angeles)" },
-  { value: "us-west3", label: "US West (Salt Lake City)" },
   { value: "us-west4", label: "US West (Las Vegas)" },
-  { value: "northamerica-northeast1", label: "Canada (Montreal)" },
-  { value: "northamerica-northeast2", label: "Canada (Toronto)" },
+  { value: "northamerica-northeast1", label: "Canada (Montréal)" },
   // South America
   { value: "southamerica-east1", label: "South America (São Paulo)" },
-  { value: "southamerica-west1", label: "South America (Santiago)" },
   // Europe
   { value: "europe-west1", label: "Europe (Belgium)" },
-  { value: "europe-west2", label: "Europe (London)" },
+  { value: "europe-west2", label: "Europe (England)" },
   { value: "europe-west3", label: "Europe (Frankfurt)" },
-  { value: "europe-west4", label: "Europe (Netherlands)" },
-  { value: "europe-west6", label: "Europe (Zurich)" },
-  { value: "europe-west9", label: "Europe (Paris)" },
-  { value: "europe-north1", label: "Europe (Finland)" },
-  { value: "europe-central2", label: "Europe (Warsaw)" },
+  // Middle East
+  { value: "me-central2", label: "Middle East (Dammam)" },
   // Asia Pacific
-  { value: "asia-east1", label: "Asia (Taiwan)" },
-  { value: "asia-east2", label: "Asia (Hong Kong)" },
   { value: "asia-northeast1", label: "Asia (Tokyo)" },
-  { value: "asia-northeast2", label: "Asia (Osaka)" },
-  { value: "asia-northeast3", label: "Asia (Seoul)" },
   { value: "asia-south1", label: "Asia (Mumbai)" },
-  { value: "asia-south2", label: "Asia (Delhi)" },
   { value: "asia-southeast1", label: "Asia (Singapore)" },
-  { value: "asia-southeast2", label: "Asia (Jakarta)" },
   // Australia
   { value: "australia-southeast1", label: "Australia (Sydney)" },
-  { value: "australia-southeast2", label: "Australia (Melbourne)" },
 ];

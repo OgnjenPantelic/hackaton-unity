@@ -54,7 +54,7 @@ variable "existing_subnet_name" {
 variable "nodes_ip_cidr_range" { 
     # CIDR range for nodes. See https://docs.databricks.com/gcp/en/admin/cloud-configurations/gcp/network-sizing for sizing details.
     # This is important as it can't be changed after the workspace is created.
-    default = "10.0.0.0/16"
+    default = "10.0.0.0/20"
 }
 variable "use_existing_PSC_EP" { 
     # Flag to use an existing PSC endpoint
