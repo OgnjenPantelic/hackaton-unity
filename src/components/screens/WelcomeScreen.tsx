@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
+import { invoke } from '@tauri-apps/api/core';
 import { useWizard } from '../../hooks/useWizard';
 
 const GearIcon = () => (
@@ -47,10 +48,21 @@ const WelcomeScreen: React.FC = () => {
   const { setScreen, deployment } = useWizard();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [updateAvailable, setUpdateAvailable] = useState<{ version: string; url: string } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    getVersion().then(setAppVersion).catch(() => {});
+    getVersion().then((version) => {
+      setAppVersion(version);
+      invoke<{ update_available: boolean; latest_version: string | null; download_url: string | null }>(
+        "check_for_updates",
+        { currentVersion: version }
+      ).then((result) => {
+        if (result.update_available && result.latest_version && result.download_url) {
+          setUpdateAvailable({ version: result.latest_version, url: result.download_url });
+        }
+      }).catch(() => {});
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -103,22 +115,14 @@ const WelcomeScreen: React.FC = () => {
           Databricks Deployer
         </h1>
         <p className="subtitle">
-          Deploy Databricks workspaces with ease
+          Configure your options and deploy a production-grade workspace.
         </p>
 
-        <div className="welcome-intro">
-          <p>
-            Setting up Databricks workspaces with proper networking, security, and
-            Unity Catalog can be complex.{" "}
-            <strong className="welcome-highlight">This tool simplifies deployment</strong>{" "}
-            using proven Terraform templates that follow Databricks best practices.
-          </p>
-          <ul className="welcome-features-list">
-            <li><strong>Guided steps</strong> &mdash; no Terraform experience required</li>
-            <li><strong>Production-ready</strong> &mdash; security and networking built in</li>
-            <li><strong>AI Assistant</strong> &mdash; contextual help throughout the process</li>
-          </ul>
-        </div>
+        <ul className="welcome-features-list">
+          <li><strong>Guided steps</strong> &mdash; walk through configuration at your own pace</li>
+          <li><strong>Built-in validation</strong> &mdash; checks credentials, permissions, and network settings before deploy</li>
+          <li><strong>AI Assistant</strong> &mdash; contextual help throughout the process</li>
+        </ul>
 
         <div className="welcome-cta">
           <button className="btn btn-large" onClick={() => setScreen("cloud-selection")}>
@@ -130,22 +134,29 @@ const WelcomeScreen: React.FC = () => {
           <div className="feature-item">
             <div className="feature-icon"><RocketIcon /></div>
             <div className="feature-title">Fast Deployment</div>
-            <div className="feature-description">Deploy in minutes, not days</div>
           </div>
           <div className="feature-item">
             <div className="feature-icon"><ShieldIcon /></div>
             <div className="feature-title">Enterprise Security</div>
-            <div className="feature-description">Best practices built-in</div>
           </div>
           <div className="feature-item">
             <div className="feature-icon"><WandIcon /></div>
             <div className="feature-title">No Code Required</div>
-            <div className="feature-description">Simple, guided experience</div>
           </div>
         </div>
 
         {appVersion && (
-          <span className="welcome-version">v{appVersion}</span>
+          <span className="welcome-version">
+            v{appVersion}
+            {updateAvailable && (
+              <span
+                className="welcome-update-link"
+                onClick={() => invoke("open_url", { url: updateAvailable.url }).catch(() => {})}
+              >
+                v{updateAvailable.version} available
+              </span>
+            )}
+          </span>
         )}
       </div>
     </div>

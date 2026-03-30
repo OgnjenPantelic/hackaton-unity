@@ -213,6 +213,23 @@ pub fn get_templates(app: AppHandle) -> Result<Vec<Template>, String> {
         });
     }
 
+    if templates_dir.join("azure-pl-sts").exists() {
+        templates.push(Template {
+            id: "azure-pl-sts".to_string(),
+            name: "Azure Private Link".to_string(),
+            cloud: "azure".to_string(),
+            description: "Private Link workspace with backend and DBFS private endpoints, DNS zones, and serverless NCC".to_string(),
+            features: vec![
+                "Backend Private Link (control plane)".to_string(),
+                "DBFS Private Endpoint".to_string(),
+                "Private DNS zones".to_string(),
+                "Serverless NCC with Private Link".to_string(),
+                "VNet injection with dedicated subnets".to_string(),
+            ],
+            github_url: "https://github.com/databricks-solutions/technical-services-solutions/tree/main/workspace-setup/terraform-examples/azure/azure-privatelink-classic/tf".to_string(),
+        });
+    }
+
     if templates_dir.join("gcp-sra").exists() {
         templates.push(Template {
             id: "gcp-sra".to_string(),

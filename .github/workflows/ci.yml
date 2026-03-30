@@ -63,7 +63,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: package-lock.json
 
-      - name: Build frontend dist
+      - name: Build frontend (required by tauri::generate_context)
         run: npm ci && npm run build
         working-directory: .
 

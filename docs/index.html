@@ -4,14 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Download Databricks Deployer</title>
-    <meta name="description" content="Deploy Databricks workspaces with ease. No Terraform experience required.">
+    <meta name="description" content="Create a Databricks workspace with built-in networking and security best practices.">
     <meta property="og:title" content="Databricks Deployer">
-    <meta property="og:description" content="Deploy Databricks workspaces with ease using proven Terraform templates that follow best practices.">
+    <meta property="og:description" content="Create a Databricks workspace with built-in networking and security best practices. Configure your options and deploy a production-grade workspace.">
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://ognjenpantelic.github.io/workspace-creator/">
     <meta name="twitter:card" content="summary">
     <meta name="twitter:title" content="Databricks Deployer">
-    <meta name="twitter:description" content="Deploy Databricks workspaces with ease using proven Terraform templates that follow best practices.">
+    <meta name="twitter:description" content="Create a Databricks workspace with built-in networking and security best practices.">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect rx='16' width='100' height='100' fill='%23ff6b35'/><path d='M30 55l20-25 20 25-20 15z' fill='white'/><path d='M30 40l20 15 20-15' fill='none' stroke='white' stroke-width='4'/></svg>">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -116,27 +116,16 @@
 <body>
     <div class="container">
         <div class="welcome-content">
-            <h1 class="gradient" style="font-size: 3em; margin-bottom: 20px; text-align: left;">
+            <h1 class="gradient" style="font-size: 3em; margin-bottom: 10px; text-align: left;">
                 Databricks Deployer
             </h1>
-            <p style="font-size: 1.3em; color: #b3b3b3; font-style: italic; text-align: left;">
-                Deploy Databricks workspaces with ease
+            <p style="font-size: 1.1em; color: #b3b3b3; font-style: italic; text-align: left; margin-bottom: 0;">
+                Create a Databricks workspace with built-in networking and security best practices.
             </p>
 
-            <div class="welcome-intro">
-                <p>
-                    Setting up Databricks workspaces with proper networking, security, and 
-                    Unity Catalog can be complex. <strong style="color: #ff6b35;">This tool simplifies deployment</strong> using proven 
-                    Terraform templates that follow Databricks best practices.
-                </p>
-                <p>
-                    No Terraform experience required. Follow the guided steps, configure your 
-                    options, and deploy a production-ready workspace.
-                </p>
-            </div>
-
             <div style="margin-top: 50px;">
-                <h2 style="text-align: center; font-size: 1.5em; margin-bottom: 20px; color: #ffffff;">Download for Your Platform</h2>
+                <h2 style="text-align: center; font-size: 1.5em; margin-bottom: 6px; color: #ffffff;">Download for Your Platform</h2>
+                <p style="text-align: center; font-size: 0.85em; color: #888; margin-bottom: 20px;">(auto-detected)</p>
                 
                 <div id="primary-download" style="max-width: 500px; margin: 0 auto 30px;"></div>
 
@@ -145,8 +134,9 @@
                     <p class="instruction-text">
                         This app is not yet notarized by Apple. After downloading, you'll need to run this command in Terminal to remove the quarantine flag:
                     </p>
-                    <div class="code-block">
+                    <div class="code-block" style="position: relative;">
                         <code>xattr -d com.apple.quarantine '/Applications/Databricks Deployer.app'</code>
+                        <button onclick="navigator.clipboard.writeText(&quot;xattr -d com.apple.quarantine '/Applications/Databricks Deployer.app'&quot;); this.innerHTML='<svg width=&quot;14&quot; height=&quot;14&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;#4ade80&quot; stroke-width=&quot;2&quot;><polyline points=&quot;20 6 9 17 4 12&quot;/></svg>'; setTimeout(() => this.innerHTML='<svg width=&quot;14&quot; height=&quot;14&quot; viewBox=&quot;0 0 24 24&quot; fill=&quot;none&quot; stroke=&quot;currentColor&quot; stroke-width=&quot;2&quot;><rect x=&quot;9&quot; y=&quot;9&quot; width=&quot;13&quot; height=&quot;13&quot; rx=&quot;2&quot;/><path d=&quot;M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1&quot;/></svg>', 1500);" style="position: absolute; top: 50%; right: 8px; transform: translateY(-50%); background: transparent; border: 1px solid #555; border-radius: 4px; color: #aaa; cursor: pointer; padding: 4px 6px; display: flex; align-items: center;" title="Copy to clipboard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
                     </div>
                     <p class="instruction-subtext">
                         <strong>Why?</strong> macOS Gatekeeper blocks apps that aren't code-signed and notarized by Apple. This command tells macOS to trust the app.
@@ -177,23 +167,6 @@
                 </div>
             </div>
 
-            <div class="feature-grid">
-                <div class="feature-item">
-                    <div class="feature-icon">🚀</div>
-                    <div class="feature-title">Fast Deployment</div>
-                    <div class="feature-description">Deploy in minutes, not days</div>
-                </div>
-                <div class="feature-item">
-                    <div class="feature-icon">🔒</div>
-                    <div class="feature-title">Enterprise Security</div>
-                    <div class="feature-description">Best practices built-in</div>
-                </div>
-                <div class="feature-item">
-                    <div class="feature-icon">✨</div>
-                    <div class="feature-title">No Code Required</div>
-                    <div class="feature-description">Simple, guided experience</div>
-                </div>
-            </div>
         </div>
     </div>
 </body>

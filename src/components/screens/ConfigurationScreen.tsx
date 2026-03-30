@@ -20,7 +20,7 @@ import {
 import type { ObjectSubField } from "../../constants";
 import { TerraformVariable } from "../../types";
 import { groupVariablesBySection, formatVariableName } from "../../utils/variables";
-import { computeSubnets, computeAwsSubnets, computeAwsSraSubnets, cidrsOverlap, parseCidr, getUsableNodes } from "../../utils/cidr";
+import { computeSubnets, computeAzurePlSubnets, computeAwsSubnets, computeAwsSraSubnets, cidrsOverlap, parseCidr, getUsableNodes } from "../../utils/cidr";
 import { useWizard } from "../../hooks/useWizard";
 import { usePersistedCollapse } from "../../hooks/usePersistedCollapse";
 
@@ -85,7 +85,8 @@ export function ConfigurationScreen() {
   const isSraTemplate = selectedTemplate?.id?.includes("sra") ?? false;
   const isAzureSra = selectedTemplate?.id === "azure-sra";
   const skipsCatalogScreen = selectedTemplate?.id === "gcp-sra";
-  const isAzureSimple = selectedCloud === CLOUDS.AZURE && !isAzureSra;
+  const isAzurePl = selectedTemplate?.id === "azure-pl-sts";
+  const isAzureSimple = selectedCloud === CLOUDS.AZURE && !isAzureSra && !isAzurePl;
 
   const [resourceConflicts, setResourceConflicts] = useState<ResourceNameConflict[]>([]);
   const [showConflictDialog, setShowConflictDialog] = useState(false);
@@ -114,6 +115,12 @@ export function ConfigurationScreen() {
       if (formValues.create_workspace_resource_group === true || formValues.create_workspace_resource_group === "true") {
         const suffix = formValues.resource_suffix || "";
         if (suffix) namesToCheck.push(`rg-${suffix}`);
+      }
+    } else if (isAzurePl) {
+      const createNew = formValues.create_data_plane_resource_group;
+      if (createNew === true || createNew === "true") {
+        const rgName = formValues.resource_group_name as string;
+        if (rgName) namesToCheck.push(rgName);
       }
     } else if (isAzureSimple) {
       const createNew = formValues.create_new_resource_group;
@@ -187,6 +194,15 @@ export function ConfigurationScreen() {
         if (subnets) {
           updated["subnet_public_cidr"] = subnets.publicCidr;
           updated["subnet_private_cidr"] = subnets.privateCidr;
+        }
+      }
+      // Auto-fill subnets when VNet CIDR changes (Azure PL)
+      if (name === "cidr_dp" && selectedCloud === CLOUDS.AZURE && typeof value === "string") {
+        const plSubnets = computeAzurePlSubnets(value);
+        if (plSubnets) {
+          updated["subnet_workspace_cidrs_0"] = plSubnets.publicCidr;
+          updated["subnet_workspace_cidrs_1"] = plSubnets.privateCidr;
+          updated["subnet_private_endpoint_cidr"] = plSubnets.privateEndpointCidr;
         }
       }
       // Auto-fill subnets when VPC CIDR changes (AWS simple)
@@ -345,7 +361,13 @@ export function ConfigurationScreen() {
       conditionallyRequired.add("existing_security_group_id");
     }
   }
-  if (selectedCloud === CLOUDS.AZURE && !isAzureSra) {
+  if (isAzurePl) {
+    conditionallyRequired.add("resource_group_name");
+    conditionallyRequired.add("cidr_dp");
+    conditionallyRequired.add("subnet_workspace_cidrs_0");
+    conditionallyRequired.add("subnet_workspace_cidrs_1");
+    conditionallyRequired.add("subnet_private_endpoint_cidr");
+  } else if (selectedCloud === CLOUDS.AZURE && !isAzureSra) {
     conditionallyRequired.add("vnet_resource_group_name");
     if (createNewVnet) {
       conditionallyRequired.add("cidr");
@@ -904,11 +926,35 @@ export function ConfigurationScreen() {
     const fieldValue = formValues[variable.name] || "";
     const fieldParsed = isSubnetField ? parseCidr(fieldValue) : null;
 
+    if ((variable.name === "create_new_vnet" || variable.name === "create_data_plane_resource_group") && isBoolField(variable)) {
+      return (
+        <div key={variable.name} className="form-group" style={{ gridColumn: "1 / -1" }}>
+          <label className="checkbox-label" style={{ fontSize: "1em" }}>
+            <input
+              type="checkbox"
+              checked={formValues[variable.name] === "true" || formValues[variable.name] === true}
+              onChange={(e) => handleFormChange(variable.name, e.target.checked)}
+            />
+            {formatVariableName(variable.name)}
+          </label>
+        </div>
+      );
+    }
+
     return (
       <div key={variable.name} className="form-group" style={variable.name === "tags" ? { gridColumn: "1 / -1" } : undefined}>
-        <label>
+        <label style={variable.name === "subnets_service_endpoints" ? { display: "flex", alignItems: "center", gap: "6px" } : undefined}>
           {formatVariableName(variable.name)}
           {((variable.required && !variable.default) || allRequiredFields.has(variable.name)) && " *"}
+          {variable.name === "subnets_service_endpoints" && (
+            <span className="cidr-tooltip-wrapper">
+              <span className="cidr-tooltip-icon">?</span>
+              <span className="cidr-tooltip" style={{ width: "320px", whiteSpace: "normal" }}>
+                <span className="cidr-tooltip-title">What are Service Endpoints?</span>
+                Service endpoints route traffic from your VNet to Azure services (e.g. Storage, Key Vault) directly over Microsoft's backbone network instead of the public internet. This improves security and performance. You can then restrict those Azure services to only accept traffic from your Databricks subnets. Optional for most deployments.
+              </span>
+            </span>
+          )}
         </label>
         {isBoolField(variable) ? (
           <label className="checkbox-label">
@@ -972,47 +1018,75 @@ export function ConfigurationScreen() {
             <option value="isolated">Isolated (no public internet)</option>
             <option value="custom">Custom (bring your own VPC)</option>
           </select>
-        ) : variable.name === "resource_group_name" && azureResourceGroups.length > 0 ? (
+        ) : variable.name === "resource_group_name" && azureResourceGroups.length > 0 && (selectedTemplate?.id === "azure-simple" || isAzurePl) ? (
           <>
-            <select
-              value={!formValues.create_new_resource_group && azureResourceGroups.some(rg => rg.name === formValues[variable.name]) ? formValues[variable.name] : ""}
-              onChange={(e) => {
-                const val = e.target.value;
-                setFormValues(prev => ({
-                  ...prev,
-                  [variable.name]: val,
-                  vnet_resource_group_name: val,
-                  create_new_resource_group: val === "" ? true : false,
-                }));
-              }}
-              className={formSubmitAttempted && formValidation.missingFields.includes(variable.name) ? "input-error" : ""}
-            >
-              <option value="">Select existing or create new below</option>
-              {azureResourceGroups.map((rg) => (
-                <option key={rg.name} value={rg.name}>
-                  {rg.name} ({rg.location})
-                </option>
-              ))}
-            </select>
             <input
               type="text"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              value={formValues.create_new_resource_group ? (formValues[variable.name] || "") : ""}
+              value={formValues[variable.name] || ""}
               onChange={(e) => {
                 const val = e.target.value;
+                const isExisting = azureResourceGroups.some(rg => rg.name === val);
                 setFormValues(prev => ({
                   ...prev,
                   [variable.name]: val,
-                  vnet_resource_group_name: val,
-                  create_new_resource_group: true,
+                  ...(isAzurePl
+                    ? {
+                        create_data_plane_resource_group: !isExisting,
+                        existing_data_plane_resource_group_name: isExisting ? val : "",
+                      }
+                    : {
+                        vnet_resource_group_name: val,
+                        create_new_resource_group: !isExisting,
+                      }),
                 }));
               }}
-              placeholder="Or enter new resource group name"
-              style={{ marginTop: "8px" }}
+              placeholder="Type to filter or enter new resource group name"
               className={formSubmitAttempted && formValidation.missingFields.includes(variable.name) ? "input-error" : ""}
             />
+            {(() => {
+              const filterVal = (formValues[variable.name] as string || "").toLowerCase();
+              const filtered = azureResourceGroups.filter(rg =>
+                rg.name.toLowerCase().includes(filterVal) || rg.location.toLowerCase().includes(filterVal)
+              );
+              const exactMatch = azureResourceGroups.some(rg => rg.name === formValues[variable.name]);
+              if (filtered.length === 0 || exactMatch) return null;
+              return (
+                <div className="rg-dropdown">
+                  {filtered.map((rg) => (
+                    <div
+                      key={rg.name}
+                      className="rg-dropdown-item"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setFormValues(prev => ({
+                          ...prev,
+                          [variable.name]: rg.name,
+                          ...(isAzurePl
+                            ? {
+                                create_data_plane_resource_group: false,
+                                existing_data_plane_resource_group_name: rg.name,
+                              }
+                            : {
+                                vnet_resource_group_name: rg.name,
+                                create_new_resource_group: false,
+                              }),
+                        }));
+                      }}
+                    >
+                      {rg.name} <span style={{ color: "var(--text-muted)" }}>({rg.location})</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+            {formValues[variable.name] && !azureResourceGroups.some(rg => rg.name === formValues[variable.name]) && (
+              <div className="help-text" style={{ color: "#4ec9b0", marginTop: "4px" }}>
+                New resource group will be created
+              </div>
+            )}
           </>
         ) : variable.name === "existing_resource_group_name" && azureResourceGroups.length > 0 ? (
           <select
@@ -1028,6 +1102,19 @@ export function ConfigurationScreen() {
             className={formSubmitAttempted && formValidation.missingFields.includes(variable.name) ? "input-error" : ""}
           >
             <option value="">{`Create new (rg-${formValues["resource_suffix"] || "<resource_suffix>"})`}</option>
+            {azureResourceGroups.map((rg) => (
+              <option key={rg.name} value={rg.name}>
+                {rg.name} ({rg.location})
+              </option>
+            ))}
+          </select>
+        ) : variable.name === "existing_data_plane_resource_group_name" && azureResourceGroups.length > 0 ? (
+          <select
+            value={azureResourceGroups.some(rg => rg.name === formValues[variable.name]) ? formValues[variable.name] : ""}
+            onChange={(e) => handleFormChange(variable.name, e.target.value)}
+            className={formSubmitAttempted && formValidation.missingFields.includes(variable.name) ? "input-error" : ""}
+          >
+            <option value="">Select existing resource group</option>
             {azureResourceGroups.map((rg) => (
               <option key={rg.name} value={rg.name}>
                 {rg.name} ({rg.location})
@@ -1171,6 +1258,50 @@ export function ConfigurationScreen() {
               )}
             </div>
           );
+        })() : variable.name === "subnets_service_endpoints" ? (() => {
+          const selected: string[] = (() => {
+            const val = formValues[variable.name];
+            if (Array.isArray(val)) return val;
+            if (typeof val === "string" && val.trim()) {
+              try { const parsed = JSON.parse(val); if (Array.isArray(parsed)) return parsed; } catch {}
+            }
+            return [];
+          })();
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {selected.map((ep, idx) => (
+                <div key={idx} style={{ display: "flex", gap: "8px", marginBottom: "2px", alignItems: "center" }}>
+                  <input
+                    type="text"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    value={ep}
+                    onChange={(e) => {
+                      const updated = [...selected];
+                      updated[idx] = e.target.value;
+                      handleFormChange(variable.name, updated.filter((v) => v !== ""));
+                    }}
+                    placeholder="e.g. Microsoft.Storage"
+                    style={{ flex: 1 }}
+                  />
+                  <button type="button" onClick={() => {
+                    handleFormChange(variable.name, selected.filter((_, i) => i !== idx));
+                  }}
+                    style={{ background: "transparent", border: "1px solid #555", color: "#e74c3c",
+                      borderRadius: "4px", padding: "6px 10px", cursor: "pointer", fontSize: "14px" }}
+                    title="Remove endpoint">×</button>
+                </div>
+              ))}
+              <button type="button" onClick={() => {
+                handleFormChange(variable.name, [...selected, ""]);
+              }}
+                style={{ background: "transparent", border: "1px dashed #555", color: "#fff",
+                    borderRadius: "4px", padding: "6px 16px", cursor: "pointer", fontSize: "13px", width: "100%" }}>
+                + Add service endpoint
+              </button>
+            </div>
+          );
         })() : variable.name === "tags" ? (
           <div className="tags-editor">
             {tagPairs.map((tag, index) => (
@@ -1216,8 +1347,29 @@ export function ConfigurationScreen() {
           </div>
         )}
         {(VARIABLE_DESCRIPTION_OVERRIDES[variable.name] || variable.description) && !formValidation.fieldErrors[variable.name] && (
-          <div className="help-text">
+          <div className="help-text" style={isSubnetField ? { display: "flex", alignItems: "center", gap: "6px" } : undefined}>
             <LinkifyText text={VARIABLE_DESCRIPTION_OVERRIDES[variable.name] || variable.description} />
+            {isSubnetField && fieldParsed && variable.name !== "public_subnet_cidr" && (
+              <span className="cidr-tooltip-wrapper">
+                <span className="cidr-tooltip-icon">?</span>
+                <span className="cidr-tooltip">
+                  <span className="cidr-tooltip-title">IP Address Requirements</span>
+                  <span className="cidr-tooltip-subtitle">Nodes = The maximum number of nodes that can be active <strong>concurrently</strong> in your workspace.</span>
+                  <table className="cidr-tooltip-table">
+                    <thead><tr><th>Subnet</th><th>IPs</th><th>Nodes</th></tr></thead>
+                    <tbody>
+                      {[17,18,19,20,21,22,23,24,25,26].map(p => (
+                        <tr key={p} className={p === fieldParsed.prefixLen ? "cidr-tooltip-active" : ""}>
+                          <td>/{p}</td>
+                          <td>{Math.pow(2, 32 - p).toLocaleString()}</td>
+                          <td>{getUsableNodes(p).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </span>
+              </span>
+            )}
           </div>
         )}
         {variable.name === "cidr" && vnetOverlap && (
@@ -1245,7 +1397,7 @@ export function ConfigurationScreen() {
             warn = `⚠ VPC prefix /${p.prefixLen} is outside the recommended /15–/24 range. Private subnets would be /${p.prefixLen + 2}, but Databricks requires /17–/26.`;
           else if (variable.name === "vpc_cidr_range" && (p.prefixLen < 15 || p.prefixLen > 24))
             warn = `⚠ VPC prefix /${p.prefixLen} is outside the recommended /15–/24 range. Private subnets should be /17–/26 for Databricks.`;
-          else if (variable.name === "cidr" && (p.prefixLen < 16 || p.prefixLen > 24))
+          else if ((variable.name === "cidr" || variable.name === "cidr_dp") && (p.prefixLen < 16 || p.prefixLen > 24))
             warn = `⚠ VNet prefix /${p.prefixLen} is outside the recommended /16–/24 range.`;
           else if ((variable.name === "subnet_public_cidr" || variable.name === "subnet_private_cidr") && p.prefixLen > 26)
             warn = `⚠ Subnet /${p.prefixLen} is smaller than the Databricks recommended minimum of /26.`;
@@ -1256,35 +1408,6 @@ export function ConfigurationScreen() {
           if (!warn) return null;
           return <div className="help-text" style={{ color: "#ffb347" }}>{warn}</div>;
         })()}
-        {isSubnetField && fieldParsed && (
-          <div className="help-text" style={{ color: "#4ec9b0", display: "flex", alignItems: "center", gap: "6px" }}>
-            {variable.name === "public_subnet_cidr"
-              ? `Suggested: fixed /${fieldParsed.prefixLen} for NAT gateway.`
-              : variable.name.startsWith("private_subnet_")
-                ? `Suggested: /${fieldParsed.prefixLen} (1/4 of VPC). Each subnet scales with VPC size.`
-                : `Auto-filled with /${fieldParsed.prefixLen} prefix (2 higher than VNet), leaving space for future expansion.`
-            }
-            <span className="cidr-tooltip-wrapper">
-              <span className="cidr-tooltip-icon">?</span>
-              <span className="cidr-tooltip">
-                <span className="cidr-tooltip-title">IP Address Requirements</span>
-                <span className="cidr-tooltip-subtitle">Nodes = The maximum number of nodes that can be active <strong>concurrently</strong> in your workspace.</span>
-                <table className="cidr-tooltip-table">
-                  <thead><tr><th>Subnet</th><th>IPs</th><th>Nodes</th></tr></thead>
-                  <tbody>
-                    {[17,18,19,20,21,22,23,24,25,26].map(p => (
-                      <tr key={p} className={p === fieldParsed.prefixLen ? "cidr-tooltip-active" : ""}>
-                        <td>/{p}</td>
-                        <td>{Math.pow(2, 32 - p).toLocaleString()}</td>
-                        <td>{getUsableNodes(p).toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </span>
-            </span>
-          </div>
-        )}
       </div>
     );
   };

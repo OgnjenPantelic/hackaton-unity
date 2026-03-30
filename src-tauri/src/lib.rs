@@ -85,6 +85,7 @@ pub fn run() {
             commands::github_get_auth,
             commands::github_logout,
             commands::github_create_repo,
+            commands::check_for_updates,
             // AI Assistant
             commands::assistant_save_token,
             commands::assistant_chat,

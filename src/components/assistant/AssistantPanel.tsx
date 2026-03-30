@@ -25,8 +25,14 @@ export const AssistantPanel: React.FC = () => {
   const sampleQuestions = ASSISTANT_SAMPLE_QUESTIONS[screen] || [];
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const [showHint, setShowHint] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShowHint(false), 10000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -60,13 +66,20 @@ export const AssistantPanel: React.FC = () => {
       {/* Floating toggle button */}
       <button
         className={`assistant-toggle ${isOpen ? "assistant-toggle-hidden" : ""}`}
-        onClick={toggle}
+        onClick={() => { setShowHint(false); toggle(); }}
         title="AI Assistant"
       >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
       </button>
+
+      {showHint && !isOpen && (
+        <div className="assistant-hint">
+          <span>AI Assistant available throughout your setup!</span>
+          <div className="assistant-hint-arrow" />
+        </div>
+      )}
 
       {/* Panel */}
       <div className={`assistant-panel ${isOpen ? "assistant-panel-open" : ""}`}>

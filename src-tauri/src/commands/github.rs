@@ -1000,11 +1000,117 @@ pub async fn github_create_repo(
     })
 }
 
+// ─── Version Check ──────────────────────────────────────────────────────────
+
+/// Result of checking for a newer app version on GitHub Releases.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateCheck {
+    pub update_available: bool,
+    pub latest_version: Option<String>,
+    pub download_url: Option<String>,
+}
+
+/// Compare two semver-style version strings (e.g. "1.0.19" vs "1.0.20").
+fn is_newer_version(current: &str, latest: &str) -> bool {
+    let parse = |v: &str| -> Vec<u64> {
+        v.trim_start_matches('v')
+            .split('.')
+            .filter_map(|s| s.parse().ok())
+            .collect()
+    };
+    let c = parse(current);
+    let l = parse(latest);
+    l > c
+}
+
+/// Check GitHub Releases for a newer version of the app.
+#[tauri::command]
+pub async fn check_for_updates(current_version: String) -> Result<UpdateCheck, String> {
+    let client = http_client()?;
+
+    let resp = client
+        .get("https://api.github.com/repos/OgnjenPantelic/workspace-creator/releases/latest")
+        .header("User-Agent", "DatabricksDeployer/1.0")
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to check for updates: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Ok(UpdateCheck {
+            update_available: false,
+            latest_version: None,
+            download_url: None,
+        });
+    }
+
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse release info: {}", e))?;
+
+    let tag = body["tag_name"]
+        .as_str()
+        .unwrap_or("")
+        .trim_start_matches('v')
+        .to_string();
+
+    let html_url = body["html_url"].as_str().map(|s| s.to_string());
+
+    if tag.is_empty() {
+        return Ok(UpdateCheck {
+            update_available: false,
+            latest_version: None,
+            download_url: None,
+        });
+    }
+
+    Ok(UpdateCheck {
+        update_available: is_newer_version(&current_version, &tag),
+        latest_version: Some(tag),
+        download_url: html_url,
+    })
+}
+
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── is_newer_version ────────────────────────────────────────────────
+
+    #[test]
+    fn newer_patch_version() {
+        assert!(is_newer_version("1.0.19", "1.0.20"));
+    }
+
+    #[test]
+    fn newer_minor_version() {
+        assert!(is_newer_version("1.0.19", "1.1.0"));
+    }
+
+    #[test]
+    fn newer_major_version() {
+        assert!(is_newer_version("1.0.19", "2.0.0"));
+    }
+
+    #[test]
+    fn same_version_not_newer() {
+        assert!(!is_newer_version("1.0.19", "1.0.19"));
+    }
+
+    #[test]
+    fn older_version_not_newer() {
+        assert!(!is_newer_version("1.0.20", "1.0.19"));
+    }
+
+    #[test]
+    fn handles_v_prefix() {
+        assert!(is_newer_version("v1.0.19", "v1.0.20"));
+    }
+
+    // ── ensure_tfvars_ignored ────────────────────────────────────────────
 
     #[test]
     fn ensure_tfvars_ignored_creates_gitignore() {

@@ -307,7 +307,7 @@ button.cloud-card {
 }
 
 .form-section.advanced h3 {
-  color: #888;
+  color: #e0e0e0;
   border-bottom: none;
   margin-bottom: 0;
   padding-bottom: 0;
@@ -760,6 +760,16 @@ input[type="checkbox"] {
   background: linear-gradient(135deg, #e85a2a 0%, #ff6b35 100%);
 }
 
+.btn.btn-slim {
+  padding: 16px 36px;
+  font-size: 17px;
+}
+
+.btn.btn-large.btn-slim {
+  padding: 16px 44px;
+  font-size: 17px;
+}
+
 .back-btn {
   background: #35353a;
   color: #e8e8e8;
@@ -1047,7 +1057,9 @@ input[type="checkbox"] {
 .welcome-features-list {
   list-style: none;
   padding: 0;
-  margin: 16px 0 0 0;
+  margin: 16px auto 0;
+  text-align: left;
+  display: inline-block;
 }
 
 .welcome-features-list li {
@@ -1073,7 +1085,15 @@ input[type="checkbox"] {
   display: block;
   margin-top: 16px;
   color: var(--text-muted);
-  font-size: 0.8em;
+  font-size: 0.95em;
+}
+
+.welcome-update-link {
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  margin-left: 8px;
+  font-size: 0.95em;
 }
 
 @keyframes welcome-fade-up {
@@ -1318,6 +1338,27 @@ input[type="checkbox"] {
 /* Center actions */
 .deployment-status-card + .status-controls {
   justify-content: center;
+}
+
+/* Template folder button — dark with subtle glow */
+.btn-template-folder {
+  padding: 14px 36px;
+  font-size: 1em;
+  font-family: inherit;
+  font-weight: 500;
+  color: #c0c0c0;
+  background: #1e1e2a;
+  border: 1px solid #3a3a4a;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(255, 107, 53, 0.15), 0 0 4px rgba(255, 107, 53, 0.1);
+  transition: box-shadow 0.25s, border-color 0.25s, color 0.25s;
+}
+
+.btn-template-folder:hover {
+  color: #e0e0e0;
+  border-color: #ff6b35;
+  box-shadow: 0 0 20px rgba(255, 107, 53, 0.3), 0 0 8px rgba(255, 107, 53, 0.2);
 }
 
 /* Scrollbar styling */
@@ -1851,6 +1892,39 @@ input[type="checkbox"] {
   opacity: 0;
   pointer-events: none;
   transform: scale(0.8);
+}
+
+/* Hint tooltip pointing to the assistant toggle */
+.assistant-hint {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  background: #2a2a3e;
+  color: #e0e0e0;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 0.85em;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  border: 1px solid #ff6b35;
+  z-index: 901;
+  white-space: nowrap;
+  animation: assistant-hint-in 0.4s ease forwards;
+}
+
+.assistant-hint-arrow {
+  position: absolute;
+  bottom: -8px;
+  right: 18px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid transparent;
+  border-right: 8px solid transparent;
+  border-top: 8px solid #ff6b35;
+}
+
+@keyframes assistant-hint-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* Panel — slides in from the right */
@@ -2866,6 +2940,14 @@ input[type="checkbox"] {
 .terraform-log .tf-info {
   color: var(--text-muted);
 }
+.terraform-log .tf-error {
+  color: #ff6b6b;
+  background: rgba(255, 70, 70, 0.1);
+  border-left: 3px solid #ff4646;
+  padding-left: 8px;
+  margin-left: -8px;
+  font-weight: 500;
+}
 
 .log-panel {
   margin-top: 20px;
@@ -3058,5 +3140,28 @@ input[type="checkbox"] {
 }
 .resource-timeline-list::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
+}
+
+/* Resource group filterable dropdown */
+.rg-dropdown {
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card-bg);
+  margin-top: 4px;
+}
+.rg-dropdown-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 0.9em;
+  border-bottom: 1px solid var(--border);
+  transition: background 0.15s;
+}
+.rg-dropdown-item:last-child {
+  border-bottom: none;
+}
+.rg-dropdown-item:hover {
+  background: rgba(255, 140, 50, 0.12);
 }
 
