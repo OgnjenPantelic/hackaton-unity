@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Azure Self-serve Deployments | Unified Deployment Toolkit</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect rx='16' width='100' height='100' fill='%23ff6b35'/><path d='M30 55l20-25 20 25-20 15z' fill='white'/><path d='M30 40l20 15 20-15' fill='none' stroke='white' stroke-width='4'/></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="back-link">
+            <a href="index.html">&larr; Back to Unified Deployment Toolkit</a>
+        </div>
+
+        <div class="hub-header">
+            <h1 class="gradient hub-title">Azure Self-serve Deployments</h1>
+            <p class="hub-tagline">Emphasizes speed of deployment over flexibility of customization. Useful if the customer prefers a more Databricks-managed approach to workspace creation and maintenance.</p>
+        </div>
+
+        <div class="deployment-grid">
+            <div class="deployment-card">
+                <h4>Serverless Workspace</h4>
+                <ul class="deployment-details">
+                    <li>No resources deployed in the customer's Azure subscription (no cloud permissions required)</li>
+                    <li>Ideal for first-time customers with no DevOps/Infra team</li>
+                    <li>Ideal for quick exploration on Databricks with minimal setup</li>
+                    <li>Fully managed SaaS experience (Serverless compute + Default Storage)</li>
+                    <li>Does not support Classic compute</li>
+                </ul>
+                <div class="slide-embed">
+                    <iframe src="https://docs.google.com/presentation/d/1lsORGM4htTR8RH5ovcQsRGlwBLdrLF287qIPUQg8Zoc/embed?start=false&loop=false&delayms=3000&slide=id.g3a6ee5d48b2_0_313" frameborder="0" width="100%" height="300" allowfullscreen="true" mozallowfullscreen="true" webkitallowfullscreen="true"></iframe>
+                </div>
+            </div>
+            <div class="deployment-card">
+                <h4>Hybrid Workspace</h4>
+                <ul class="deployment-details">
+                    <li>VNet and other dependent resources are created and managed by Databricks in the customer's Azure subscription</li>
+                    <li>Requires Azure cloud permissions</li>
+                    <li>Ideal for first-time customers looking for quick exploration</li>
+                    <li>Ideal for POCs</li>
+                    <li>This can be converted to a VNet injected setup</li>
+                </ul>
+                <div class="slide-embed">
+                    <iframe src="https://docs.google.com/presentation/d/1DB1VgO6eYkvLohCi1sKkvLbckqcSppI45MzjlwRF8uI/embed?start=false&loop=false&delayms=3000&slide=id.g32c3cd6d0e3_1_129" frameborder="0" width="100%" height="300" allowfullscreen="true" mozallowfullscreen="true" webkitallowfullscreen="true"></iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

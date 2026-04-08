@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Databricks Template Builder</title>
+    <meta name="description" content="Configure and download ready-to-use Databricks Terraform templates.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect rx='16' width='100' height='100' fill='%23ff6b35'/><path d='M30 55l20-25 20 25-20 15z' fill='white'/><path d='M30 40l20 15 20-15' fill='none' stroke='white' stroke-width='4'/></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="template-data.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Step Indicator (dot style, matching desktop app) -->
+    <div class="wizard-steps-global" id="step-indicator"></div>
+
+    <!-- Step 1: Cloud Selection -->
+    <div class="wizard-screen" id="step-cloud">
+        <div class="container">
+            <button class="back-btn" onclick="window.location.href='../index.html'">← Back</button>
+            <h1>Select Cloud Provider</h1>
+            <p class="subtitle">Select the cloud platform for your Databricks workspace template.</p>
+            <div class="cloud-selection">
+                <button class="cloud-card aws" onclick="selectCloud('aws')" type="button">
+                    <div class="cloud-name">Amazon Web Services</div>
+                    <div class="cloud-description">Deploy a Databricks workspace on AWS with VPC networking, IAM, and S3 storage.</div>
+                </button>
+                <button class="cloud-card azure" onclick="selectCloud('azure')" type="button">
+                    <div class="cloud-name">Microsoft Azure</div>
+                    <div class="cloud-description">Deploy a Databricks workspace on Azure with VNet injection, NSG, and storage accounts.</div>
+                </button>
+                <button class="cloud-card gcp" onclick="selectCloud('gcp')" type="button">
+                    <div class="cloud-name">Google Cloud Platform</div>
+                    <div class="cloud-description">Deploy a Databricks workspace on GCP with VPC, Cloud NAT, and service accounts.</div>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 2: Template Selection -->
+    <div class="wizard-screen hidden" id="step-template">
+        <div class="container">
+            <button class="back-btn" onclick="goToStep(1)">← Back</button>
+            <h1>Select Template</h1>
+            <p class="subtitle">Choose a deployment template for your workspace.</p>
+            <div class="templates" id="template-grid"></div>
+        </div>
+    </div>
+
+    <!-- Step 3: Configuration -->
+    <div class="wizard-screen hidden" id="step-config">
+        <div class="container">
+            <button class="back-btn" onclick="goToStep(2)">← Back</button>
+            <h1>Configure Deployment</h1>
+            <p class="subtitle">Fill in the configuration values for your Databricks workspace deployment.</p>
+            <form onsubmit="return false" id="config-form"></form>
+
+            <!-- Unity Catalog Section -->
+            <div id="uc-section" class="form-section" style="display:none;">
+                <h3>Unity Catalog</h3>
+                <div class="form-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="uc-enabled" onchange="onUcToggle()">
+                        Enable Unity Catalog
+                    </label>
+                    <div class="help-text">Configure Unity Catalog for your workspace.</div>
+                </div>
+                <div id="uc-fields" style="display:none;">
+                    <div class="form-group">
+                        <label for="uc-metastore-id">Existing Metastore ID</label>
+                        <input type="text" id="uc-metastore-id" placeholder="Leave empty to create a new metastore">
+                        <div class="help-text">ID of an existing Unity Catalog metastore. Leave empty to auto-detect or create new.</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="uc-catalog-name">Catalog Name</label>
+                        <input type="text" id="uc-catalog-name" placeholder="my-catalog">
+                        <div class="help-text">Name for the workspace catalog.</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="uc-storage-name">Storage Name</label>
+                        <input type="text" id="uc-storage-name" placeholder="my-uc-storage">
+                        <div class="help-text">Storage account or bucket name for Unity Catalog data.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sticky-footer">
+                <button class="btn btn-secondary" onclick="goToStep(2)">← Back</button>
+                <button class="btn btn-large" onclick="goToStep(4)">Download Template →</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 4: Download -->
+    <div class="wizard-screen hidden" id="step-download">
+        <div class="container">
+            <div class="download-summary">
+                <div class="download-icon">
+                    <svg width="64" height="64" viewBox="0 0 64 64" fill="none"><rect rx="16" width="64" height="64" fill="rgba(255,107,53,0.15)"/><path d="M32 20v18M24 32l8 8 8-8" stroke="#ff6b35" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M20 42h24" stroke="#ff6b35" stroke-width="3" stroke-linecap="round"/></svg>
+                </div>
+                <h2>Your template is ready!</h2>
+                <p class="download-template-name" id="download-template-name"></p>
+                <p class="download-desc">Your .zip contains all Terraform files plus a populated <code>terraform.tfvars</code> with your configuration.</p>
+                <button class="btn btn-large" onclick="downloadZip()">Download .zip</button>
+                <div class="download-actions">
+                    <button class="btn btn-secondary" onclick="goToStep(3)">← Edit Configuration</button>
+                    <button class="btn btn-secondary" onclick="goToStep(1)">Start Over</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<script>
+// ─── State ───────────────────────────────────────────────────────────
+let selectedCloud = null;
+let selectedTemplate = null;
+let formValues = {};
+let variables = [];
+
+const STEP_LABELS = ["Cloud", "Template", "Configure", "Download"];
+
+// ─── Constants (ported from src/constants/templates.ts) ──────────────
+
+const VARIABLE_DISPLAY_NAMES = {
+  prefix:"Workspace Name",workspace_name:"Workspace Name",databricks_workspace_name:"Workspace Name",
+  admin_user:"Admin Email",root_storage_name:"Storage Account Name",
+  region:"Region",location:"Region",google_region:"Region",
+  resource_group_name:"Resource Group",google_project_name:"Project ID",
+  google_service_account_email:"Service Account Email",
+  cidr:"VNet CIDR",subnet_public_cidr:"Public Subnet CIDR",subnet_private_cidr:"Private Subnet CIDR",
+  create_new_vnet:"Create New VNet",vnet_name:"Existing VNet Name",vnet_resource_group_name:"VNet Resource Group",
+  create_new_vpc:"Create New VPC",cidr_block:"VPC CIDR",
+  private_subnet_1_cidr:"Private Subnet 1 CIDR",private_subnet_2_cidr:"Private Subnet 2 CIDR",
+  public_subnet_cidr:"Public Subnet CIDR (NAT)",resource_prefix:"Resources Prefix",
+  cidr_dp:"VNet CIDR",subnet_workspace_cidrs:"Workspace Subnet CIDRs",
+  subnet_private_endpoint_cidr:"Private Endpoint Subnet CIDR",
+  subnets_service_endpoints:"Service Endpoints",
+  create_data_plane_resource_group:"Create New Resource Group",
+  existing_data_plane_resource_group_name:"Existing Resource Group",
+  subnet_cidr:"Subnet CIDR",tags:"Resource Tags",
+  existing_vpc_id:"Existing VPC ID",existing_subnet_ids:"Existing Subnet IDs",
+  existing_security_group_id:"Existing Security Group ID",
+  existing_metastore_id:"Existing Metastore ID",
+  resource_suffix:"Resource Suffix",hub_vnet_cidr:"Hub VNet CIDR",
+  hub_resource_suffix:"Hub Resource Suffix",create_hub:"Create Hub & Account Resources",
+  create_workspace_vnet:"Create Workspace VNet",
+  create_workspace_resource_group:"Create Workspace Resource Group",
+  cmk_enabled:"Customer-Managed Keys (CMK)",workspace_vnet:"Workspace VNet Configuration",
+  existing_hub_vnet:"Existing Hub VNet",existing_workspace_vnet:"Existing Workspace VNet",
+  allowed_fqdns:"Allowed Internet Domains",existing_resource_group_name:"Resource Group",
+  existing_ncc_id:"Existing NCC ID",existing_ncc_name:"Existing NCC Name",
+  existing_network_policy_id:"Existing Network Policy Name",
+  existing_cmk_ids:"Existing CMK IDs",databricks_metastore_id:"Metastore ID",
+  workspace_security_compliance:"Security Compliance Settings",
+  network_configuration:"Network Mode",vpc_cidr_range:"VPC CIDR Range",
+  private_subnets_cidr:"Private Subnets CIDR",privatelink_subnets_cidr:"PrivateLink Subnets CIDR",
+  sg_egress_ports:"Security Group Egress Ports",cmk_admin_arn:"CMK Admin ARN",
+  metastore_exists:"Metastore Already Exists",
+  audit_log_delivery_exists:"Audit Log Delivery Already Configured",
+  enable_compliance_security_profile:"Compliance Security Profile",
+  compliance_standards:"Compliance Standards",enable_security_analysis_tool:"Security Analysis Tool (SAT)",
+  custom_vpc_id:"Custom VPC ID",custom_private_subnet_ids:"Custom Private Subnet IDs",
+  custom_sg_id:"Custom Security Group ID",custom_relay_vpce_id:"Custom Relay VPC Endpoint",
+  custom_workspace_vpce_id:"Custom Workspace VPC Endpoint",deployment_name:"Deployment Name",
+  nodes_ip_cidr_range:"Workspace Subnet CIDR",use_existing_vpc:"Use Existing VPC",
+  existing_vpc_name:"Existing VPC Name",existing_subnet_name:"Existing Subnet Name",
+  harden_network:"Network Hardening",control_plane_ips:"Control Plane IP Ranges",
+  use_psc:"Private Service Connect (PSC)",google_pe_subnet:"PSC Subnet Name",
+  google_pe_subnet_ip_cidr_range:"PSC Subnet CIDR",workspace_pe:"Workspace PSC Endpoint",
+  relay_pe:"Relay PSC Endpoint",relay_pe_ip_name:"Relay PE IP Name",
+  workspace_pe_ip_name:"Workspace PE IP Name",relay_service_attachment:"Relay Service Attachment",
+  workspace_service_attachment:"Workspace Service Attachment",
+  use_existing_PSC_EP:"Use Existing PSC Endpoints",
+  use_existing_databricks_vpc_eps:"Use Existing Databricks VPC Endpoints",
+  existing_databricks_vpc_ep_workspace:"Existing Workspace VPC Endpoint ID",
+  existing_databricks_vpc_ep_relay:"Existing Relay VPC Endpoint ID",
+  ip_addresses:"Allowed IP Addresses",account_console_url:"Account Console URL",
+  key_name:"CMEK Key Name",keyring_name:"CMEK Keyring Name",
+  use_existing_cmek:"Use Existing CMEK",cmek_resource_id:"Existing CMEK Resource ID",
+  use_existing_pas:"Use Existing Private Access",existing_pas_id:"Existing Private Access Settings ID",
+  regional_metastore_id:"Regional Metastore ID",
+  databricks_account_id:"Databricks Account ID",tenant_id:"Azure Tenant ID",
+  azure_subscription_id:"Azure Subscription ID",subscription_id:"Azure Subscription ID",
+  databricks_auth_type:"Databricks Auth Type",databricks_client_id:"Databricks Client ID",
+  databricks_client_secret:"Databricks Client Secret",databricks_profile:"Databricks CLI Profile",
+  sat_configuration:"SAT Configuration",sat_service_principal:"SAT Service Principal",
+};
+
+const VARIABLE_DESCRIPTIONS = {
+  prefix:"Display name for your Databricks workspace.",
+  workspace_name:"Name for your Databricks workspace.",
+  databricks_workspace_name:"Name for your Databricks workspace.",
+  admin_user:"Email address of the workspace admin. Must already exist in your Databricks account.",
+  root_storage_name:"Storage account (Azure: 3-24 chars) or S3 bucket name. Lowercase letters and numbers only.",
+  region:"AWS region where your Databricks workspace will be deployed.",
+  location:"Azure region where your Databricks workspace will be deployed.",
+  google_region:"GCP region where your Databricks workspace will be deployed.",
+  resource_group_name:"Azure resource group for the workspace.",
+  google_project_name:"GCP project ID for workspace resources.",
+  google_service_account_email:"Service account email for authentication.",
+  tags:"Optional key-value pairs to tag all created resources.",
+  databricks_account_id:"Your Databricks Account ID.",
+  tenant_id:"Your Azure Active Directory tenant ID.",
+  azure_subscription_id:"Your Azure subscription ID.",
+  subscription_id:"Your Azure subscription ID.",
+  databricks_auth_type:"Authentication type for Databricks.",
+  network_configuration:"Network mode: 'isolated' creates a new VPC with PrivateLink; 'custom' uses your existing VPC.",
+  create_hub:"Create hub infrastructure (firewall, VNet, CMK) and Databricks account resources. Disable if these already exist.",
+  cmk_enabled:"Encrypt managed disks and services with customer-managed keys.",
+};
+
+const WEB_EXCLUDE_VARIABLES = [
+  'gcp_auth_method','google_credentials_json',
+  'hub_workspace_url_override','spoke_workspace_url_override',
+  'workspace_url_override','workspace_sku','az_subscription',
+  'create_new_resource_group',
+  'create_unity_catalog','uc_catalog_name','uc_storage_name','uc_force_destroy',
+  'existing_metastore_id','metastore_exists','databricks_metastore_id',
+  'create_workspace_resource_group','subscription_id',
+  'sat_force_destroy','catalog_force_destroy',
+  'deployment_name',
+  'artifact_storage_bucket','shared_datasets_bucket','region_name_config',
+  'scc_relay_config','system_table_bucket_config','log_storage_bucket_config',
+  'workspace_config','aws_partition','databricks_provider_host','databricks_gov_shard',
+  'databricks_google_service_account','project',
+  'workspace_name_overrides',
+];
+
+const SECTION_MAP = {
+  prefix:"Workspace",workspace_name:"Workspace",databricks_workspace_name:"Workspace",
+  admin_user:"Workspace",root_storage_name:"Workspace",
+  region:"Workspace",location:"Workspace",google_region:"Workspace",
+  resource_group_name:"Workspace",resource_prefix:"Workspace",resource_suffix:"Workspace",
+  databricks_account_id:"Credentials",tenant_id:"Credentials",
+  azure_subscription_id:"Credentials",databricks_auth_type:"Credentials",
+  databricks_client_id:"Credentials",databricks_client_secret:"Credentials",
+  databricks_profile:"Credentials",google_project_name:"Credentials",
+  google_service_account_email:"Credentials",
+  create_data_plane_resource_group:"Workspace",
+  existing_data_plane_resource_group_name:"Workspace",
+  tags:"Tags",
+  cidr_dp:"Network Configuration",subnet_workspace_cidrs:"Network Configuration",subnet_private_endpoint_cidr:"Network Configuration",
+  subnets_service_endpoints:"Network Configuration",create_new_vpc:"Network Configuration",cidr_block:"Network Configuration",
+  private_subnet_1_cidr:"Network Configuration",private_subnet_2_cidr:"Network Configuration",
+  public_subnet_cidr:"Network Configuration",cidr:"Network Configuration",subnet_public_cidr:"Network Configuration",
+  subnet_private_cidr:"Network Configuration",subnet_cidr:"Network Configuration",create_new_vnet:"Network Configuration",
+  vnet_name:"Network Configuration",vnet_resource_group_name:"Network Configuration",
+  create_hub:"Hub Infrastructure",hub_vnet_cidr:"Hub Infrastructure",
+  hub_resource_suffix:"Hub Infrastructure",existing_hub_vnet:"Hub Infrastructure",
+  existing_ncc_id:"Hub Infrastructure",existing_ncc_name:"Hub Infrastructure",
+  existing_network_policy_id:"Hub Infrastructure",
+  create_workspace_vnet:"Workspace Network",workspace_vnet:"Workspace Network",
+  existing_workspace_vnet:"Workspace Network",existing_resource_group_name:"Workspace",
+  allowed_fqdns:"Firewall Rules",cmk_enabled:"Encryption",existing_cmk_ids:"Encryption",
+  network_configuration:"Network Configuration",vpc_cidr_range:"Network Configuration",
+  private_subnets_cidr:"Network Configuration",privatelink_subnets_cidr:"Network Configuration",
+  sg_egress_ports:"Network Configuration",
+  existing_vpc_id:"Network Configuration",existing_subnet_ids:"Network Configuration",existing_security_group_id:"Network Configuration",
+  custom_vpc_id:"Network Configuration",custom_private_subnet_ids:"Network Configuration",custom_sg_id:"Network Configuration",
+  custom_relay_vpce_id:"Network Configuration",custom_workspace_vpce_id:"Network Configuration",
+  nodes_ip_cidr_range:"Network Configuration",use_existing_vpc:"Network Configuration",
+  existing_vpc_name:"Network Configuration",existing_subnet_name:"Network Configuration",
+  use_psc:"Network Configuration",google_pe_subnet:"Network Configuration",google_pe_subnet_ip_cidr_range:"Network Configuration",
+  workspace_pe:"Network Configuration",relay_pe:"Network Configuration",relay_pe_ip_name:"Network Configuration",
+  workspace_pe_ip_name:"Network Configuration",relay_service_attachment:"Network Configuration",
+  workspace_service_attachment:"Network Configuration",
+  use_existing_PSC_EP:"Network Configuration",use_existing_databricks_vpc_eps:"Network Configuration",
+  existing_databricks_vpc_ep_workspace:"Network Configuration",existing_databricks_vpc_ep_relay:"Network Configuration",
+  use_existing_pas:"Network Configuration",existing_pas_id:"Network Configuration",
+  enable_compliance_security_profile:"Security & Compliance",compliance_standards:"Security & Compliance",
+  enable_security_analysis_tool:"Security & Compliance",cmk_admin_arn:"Security & Compliance",
+  harden_network:"Security & Compliance",control_plane_ips:"Security & Compliance",
+  use_existing_cmek:"Security & Compliance",key_name:"Security & Compliance",keyring_name:"Security & Compliance",
+  cmek_resource_id:"Security & Compliance",workspace_security_compliance:"Security & Compliance",
+  audit_log_delivery_exists:"Additional Settings",ip_addresses:"Additional Settings",
+  account_console_url:"Additional Settings",sat_configuration:"Additional Settings",
+  sat_service_principal:"Additional Settings",regional_metastore_id:"Additional Settings",
+};
+
+const SECTION_ORDER = ["Credentials","Workspace","Hub Infrastructure","Workspace Network","Network Configuration","Firewall Rules","Encryption","Security & Compliance","Additional Settings","Tags"];
+
+const COLLAPSIBLE_SECTIONS = ["Hub Infrastructure","Workspace Network","Network Configuration","Firewall Rules","Encryption","Security & Compliance","Additional Settings"];
+
+const CONDITIONAL_VISIBILITY = [
+  {toggle:"create_new_vpc",defaultChecked:true,showWhenChecked:["cidr_block","private_subnet_1_cidr","private_subnet_2_cidr","public_subnet_cidr"],showWhenUnchecked:["existing_vpc_id","existing_subnet_ids","existing_security_group_id"]},
+  {toggle:"create_hub",defaultChecked:true,showWhenChecked:["hub_vnet_cidr","hub_resource_suffix","allowed_fqdns","sat_configuration","sat_service_principal"],showWhenUnchecked:["existing_hub_vnet","existing_cmk_ids","existing_ncc_id","existing_ncc_name","existing_network_policy_id"]},
+  {toggle:"cmk_enabled",defaultChecked:true,showWhenChecked:["existing_cmk_ids"],showWhenUnchecked:[]},
+  {toggle:"create_workspace_vnet",defaultChecked:true,showWhenChecked:["workspace_vnet"],showWhenUnchecked:["existing_workspace_vnet"]},
+  {toggle:"enable_compliance_security_profile",defaultChecked:false,showWhenChecked:["compliance_standards"],showWhenUnchecked:[]},
+  {toggle:"use_existing_vpc",defaultChecked:false,showWhenChecked:["existing_vpc_name","existing_subnet_name"],showWhenUnchecked:["nodes_ip_cidr_range"]},
+  {toggle:"harden_network",defaultChecked:true,showWhenChecked:["control_plane_ips"],showWhenUnchecked:[]},
+  {toggle:"use_psc",defaultChecked:false,showWhenChecked:["google_pe_subnet","google_pe_subnet_ip_cidr_range","workspace_pe","relay_pe","relay_pe_ip_name","workspace_pe_ip_name","relay_service_attachment","workspace_service_attachment","use_existing_PSC_EP","use_existing_databricks_vpc_eps","existing_databricks_vpc_ep_workspace","existing_databricks_vpc_ep_relay"],showWhenUnchecked:["control_plane_ips"]},
+  {toggle:"use_existing_cmek",defaultChecked:false,showWhenChecked:["cmek_resource_id"],showWhenUnchecked:["key_name","keyring_name"]},
+  {toggle:"use_existing_pas",defaultChecked:false,showWhenChecked:["existing_pas_id"],showWhenUnchecked:[]},
+  {toggle:"create_new_vnet",defaultChecked:true,showWhenChecked:["cidr","subnet_public_cidr","subnet_private_cidr"],showWhenUnchecked:["vnet_name","vnet_resource_group_name"]},
+];
+
+const SELECT_VISIBILITY = [
+  {toggle:"network_configuration",defaultValue:"isolated",options:[
+    {value:"isolated",showFields:["vpc_cidr_range","private_subnets_cidr","privatelink_subnets_cidr","sg_egress_ports"]},
+    {value:"custom",showFields:["custom_vpc_id","custom_private_subnet_ids","custom_sg_id","custom_relay_vpce_id","custom_workspace_vpce_id"]}
+  ]}
+];
+
+// ─── Step Indicator ──────────────────────────────────────────────────
+
+function renderStepIndicator(currentStep) {
+  const container = document.getElementById('step-indicator');
+  if (currentStep === 0) { container.innerHTML = ''; return; }
+
+  let html = '';
+  for (let i = 0; i < STEP_LABELS.length; i++) {
+    if (i > 0) {
+      const connClass = i < currentStep ? 'completed' : '';
+      html += `<span class="wizard-step-connector ${connClass}"></span>`;
+    }
+    let dotClass = 'wizard-step-dot';
+    if (i + 1 === currentStep) dotClass += ' active';
+    else if (i + 1 < currentStep) dotClass += ' completed';
+    html += `<span class="${dotClass}" title="${STEP_LABELS[i]}"></span>`;
+  }
+  container.innerHTML = html;
+}
+
+// ─── Navigation ──────────────────────────────────────────────────────
+
+function goToStep(step) {
+  document.querySelectorAll('.wizard-screen').forEach(el => el.classList.add('hidden'));
+  const screens = ['step-cloud','step-template','step-config','step-download'];
+  document.getElementById(screens[step - 1]).classList.remove('hidden');
+  renderStepIndicator(step);
+
+  if (step === 4 && selectedTemplate) {
+    document.getElementById('download-template-name').textContent = selectedTemplate.name;
+  }
+}
+
+function selectCloud(cloud) {
+  selectedCloud = cloud;
+  document.querySelectorAll('.cloud-card').forEach(el => {
+    el.classList.toggle('selected', el.classList.contains(cloud));
+  });
+  renderTemplates();
+  goToStep(2);
+}
+
+function selectTemplate(templateId) {
+  const data = window.TEMPLATE_DATA[templateId];
+  if (!data) return;
+  selectedTemplate = data;
+  variables = data.variables;
+  formValues = initializeDefaults(variables);
+  renderConfigForm();
+  goToStep(3);
+}
+
+// ─── Template Cards ──────────────────────────────────────────────────
+
+function renderTemplates() {
+  const grid = document.getElementById('template-grid');
+  const templates = Object.values(window.TEMPLATE_DATA).filter(t => t.cloud === selectedCloud);
+  grid.innerHTML = templates.map(t => `
+    <button class="template-card" onclick="selectTemplate('${t.id}')" type="button">
+      <div class="template-title">${t.name}</div>
+      <div class="template-description">${t.description}</div>
+      <div class="template-features"><ul>${t.features.map(f => `<li>✓ ${f}</li>`).join('')}</ul></div>
+    </button>
+  `).join('');
+}
+
+// ─── Smart Defaults ──────────────────────────────────────────────────
+
+function randomSuffix() { return Math.random().toString(36).substring(2, 8); }
+
+function initializeDefaults(vars) {
+  const defaults = {};
+  const suffix = randomSuffix();
+  const short = suffix.slice(0, 5);
+
+  for (const v of vars) {
+    if (WEB_EXCLUDE_VARIABLES.includes(v.name)) continue;
+    const name = v.name;
+
+    if (name === 'prefix') defaults[name] = `databricks-${suffix}`;
+    else if (name === 'workspace_name' || name === 'databricks_workspace_name') defaults[name] = `databricks-ws-${suffix}`;
+    else if (name === 'root_storage_name') defaults[name] = `dbstorage${short}`;
+    else if (name === 'resource_suffix') defaults[name] = `sra${suffix}`;
+    else if (name === 'resource_prefix') defaults[name] = `dbx${suffix}`;
+    else if (name === 'hub_resource_suffix') defaults[name] = `hub${short}`;
+    else if (name === 'location' || name === 'google_region' || name === 'region') defaults[name] = '';
+    else if (name === 'vpc_cidr_range') defaults[name] = '10.0.0.0/16';
+    else if (name === 'hub_vnet_cidr') defaults[name] = '10.100.0.0/20';
+    else if (name === 'sg_egress_ports') defaults[name] = '["443", "3306", "6666", "8443", "8444", "8445", "8446", "8447", "8448", "8449", "8450", "8451"]';
+    else if (name === 'network_configuration') defaults[name] = '';
+    else if (name === 'nodes_ip_cidr_range' || name === 'subnet_cidr') defaults[name] = '10.0.0.0/20';
+    else if (name === 'google_pe_subnet') defaults[name] = 'databricks-pe-subnet';
+    else if (name === 'google_pe_subnet_ip_cidr_range') defaults[name] = '10.3.0.0/24';
+    else if (name === 'workspace_pe') defaults[name] = 'workspace-pe';
+    else if (name === 'relay_pe') defaults[name] = 'relay-pe';
+    else if (name === 'key_name') defaults[name] = 'sra-key';
+    else if (name === 'keyring_name') defaults[name] = 'sra-keyring';
+    else if (name === 'account_console_url') defaults[name] = 'https://accounts.gcp.databricks.com';
+    else if (name === 'ip_addresses') defaults[name] = '["0.0.0.0/0"]';
+    else if (['use_existing_cmek','use_existing_pas','audit_log_delivery_exists'].includes(name) && v.default === null) defaults[name] = false;
+    else if (v.default !== null && v.default !== undefined) {
+      const d = String(v.default).trim();
+      if (d === 'null' || d.startsWith('null ')) defaults[name] = '';
+      else if ((d.startsWith('{') || d.startsWith('[')) && !isValidJson(d)) defaults[name] = '';
+      else defaults[name] = v.default;
+    } else defaults[name] = '';
+  }
+
+  // Auto-compute subnet defaults from CIDR values
+  // Azure simple: cidr -> subnet_public_cidr, subnet_private_cidr
+  if (defaults['cidr']) {
+    const subnets = computeSubnets(defaults['cidr']);
+    if (subnets) {
+      if (!defaults['subnet_public_cidr']) defaults['subnet_public_cidr'] = subnets.publicCidr;
+      if (!defaults['subnet_private_cidr']) defaults['subnet_private_cidr'] = subnets.privateCidr;
+    }
+  }
+  // AWS simple: cidr_block -> private_subnet_1_cidr, private_subnet_2_cidr, public_subnet_cidr
+  if (defaults['cidr_block']) {
+    const subnets = computeAwsSubnets(defaults['cidr_block']);
+    if (subnets) {
+      if (!defaults['private_subnet_1_cidr']) defaults['private_subnet_1_cidr'] = subnets.private1Cidr;
+      if (!defaults['private_subnet_2_cidr']) defaults['private_subnet_2_cidr'] = subnets.private2Cidr;
+      if (!defaults['public_subnet_cidr']) defaults['public_subnet_cidr'] = subnets.publicCidr;
+    }
+  }
+  // Azure PL: cidr_dp -> workspace subnets + PE subnet
+  if (defaults['cidr_dp']) {
+    const plSubnets = computeAzurePlSubnets(defaults['cidr_dp']);
+    if (plSubnets) {
+      if (!defaults['subnet_workspace_cidrs_0']) defaults['subnet_workspace_cidrs_0'] = plSubnets.publicCidr;
+      if (!defaults['subnet_workspace_cidrs_1']) defaults['subnet_workspace_cidrs_1'] = plSubnets.privateCidr;
+      if (!defaults['subnet_private_endpoint_cidr']) defaults['subnet_private_endpoint_cidr'] = plSubnets.privateEndpointCidr;
+    }
+  }
+  // AWS SRA: vpc_cidr_range -> private + privatelink subnets
+  if (defaults['vpc_cidr_range']) {
+    const sra = computeAwsSraSubnets(defaults['vpc_cidr_range']);
+    if (sra) {
+      if (!defaults['private_subnets_cidr_1']) defaults['private_subnets_cidr_1'] = sra.private1;
+      if (!defaults['private_subnets_cidr_2']) defaults['private_subnets_cidr_2'] = sra.private2;
+      if (!defaults['privatelink_subnets_cidr_1']) defaults['privatelink_subnets_cidr_1'] = sra.privatelink1;
+      if (!defaults['privatelink_subnets_cidr_2']) defaults['privatelink_subnets_cidr_2'] = sra.privatelink2;
+    }
+  }
+
+  return defaults;
+}
+
+function isValidJson(s) { try { JSON.parse(s); return true; } catch { return false; } }
+
+// ─── CIDR Calculation (ported from src/utils/cidr.ts) ────────────────
+
+function parseCidr(cidr) {
+  if (typeof cidr !== 'string') return null;
+  const match = cidr.trim().match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/);
+  if (!match) return null;
+  const octets = [parseInt(match[1]), parseInt(match[2]), parseInt(match[3]), parseInt(match[4])];
+  const prefixLen = parseInt(match[5]);
+  if (octets.some(o => o < 0 || o > 255) || prefixLen < 0 || prefixLen > 32) return null;
+  const networkAddr = ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+  return { networkAddr, prefixLen };
+}
+
+function intToIp(addr) {
+  return `${(addr >>> 24) & 0xff}.${(addr >>> 16) & 0xff}.${(addr >>> 8) & 0xff}.${addr & 0xff}`;
+}
+
+function computeSubnets(vnetCidr) {
+  const parsed = parseCidr(vnetCidr);
+  if (!parsed || parsed.prefixLen >= 29) return null;
+  const subnetPrefix = parsed.prefixLen + 2;
+  const subnetSize = Math.pow(2, 32 - subnetPrefix);
+  return {
+    publicCidr: `${intToIp(parsed.networkAddr)}/${subnetPrefix}`,
+    privateCidr: `${intToIp((parsed.networkAddr + subnetSize) >>> 0)}/${subnetPrefix}`,
+  };
+}
+
+function computeAzurePlSubnets(vnetCidr) {
+  const parsed = parseCidr(vnetCidr);
+  if (!parsed || parsed.prefixLen > 24) return null;
+  const wsPrefix = Math.min(parsed.prefixLen + 2, 26);
+  const wsSize = Math.pow(2, 32 - wsPrefix);
+  const publicStart = parsed.networkAddr;
+  const privateStart = (publicStart + wsSize) >>> 0;
+  const peStart = (privateStart + wsSize) >>> 0;
+  return {
+    publicCidr: `${intToIp(publicStart)}/${wsPrefix}`,
+    privateCidr: `${intToIp(privateStart)}/${wsPrefix}`,
+    privateEndpointCidr: `${intToIp(peStart)}/26`,
+  };
+}
+
+function computeAwsSubnets(vpcCidr) {
+  const parsed = parseCidr(vpcCidr);
+  if (!parsed || parsed.prefixLen >= 26) return null;
+  const subnetPrefix = parsed.prefixLen + 2;
+  const subnetSize = Math.pow(2, 32 - subnetPrefix);
+  const midpoint = (parsed.networkAddr + subnetSize * 2) >>> 0;
+  return {
+    private1Cidr: `${intToIp(parsed.networkAddr)}/${subnetPrefix}`,
+    private2Cidr: `${intToIp((parsed.networkAddr + subnetSize) >>> 0)}/${subnetPrefix}`,
+    publicCidr: `${intToIp(midpoint)}/28`,
+  };
+}
+
+function computeAwsSraSubnets(vpcCidr) {
+  const parsed = parseCidr(vpcCidr);
+  if (!parsed || parsed.prefixLen >= 26) return null;
+  const subnetPrefix = parsed.prefixLen + 2;
+  const subnetSize = Math.pow(2, 32 - subnetPrefix);
+  const plBase = (parsed.networkAddr + subnetSize * 2) >>> 0;
+  const plSubnetSize = Math.pow(2, 32 - 28);
+  return {
+    private1: `${intToIp(parsed.networkAddr)}/${subnetPrefix}`,
+    private2: `${intToIp((parsed.networkAddr + subnetSize) >>> 0)}/${subnetPrefix}`,
+    privatelink1: `${intToIp(plBase)}/28`,
+    privatelink2: `${intToIp((plBase + plSubnetSize) >>> 0)}/28`,
+  };
+}
+
+// ─── Config Form ─────────────────────────────────────────────────────
+
+function renderConfigForm() {
+  const container = document.getElementById('config-form');
+  const filtered = variables.filter(v => !WEB_EXCLUDE_VARIABLES.includes(v.name));
+
+  const sections = {};
+  for (const v of filtered) {
+    const sec = SECTION_MAP[v.name] || 'Other';
+    if (!sections[sec]) sections[sec] = [];
+    sections[sec].push(v);
+  }
+
+  let html = '';
+  for (const secName of SECTION_ORDER) {
+    if (!sections[secName]) continue;
+    html += renderSection(secName, sections[secName]);
+    delete sections[secName];
+  }
+  for (const [secName, vars] of Object.entries(sections)) {
+    html += renderSection(secName, vars);
+  }
+  container.innerHTML = html;
+
+  const ucSection = document.getElementById('uc-section');
+  ucSection.style.display = selectedTemplate.id === 'gcp-sra' ? 'none' : 'block';
+
+  applyConditionalVisibility();
+}
+
+function renderSection(name, vars) {
+  const isCollapsible = COLLAPSIBLE_SECTIONS.includes(name);
+  const fields = vars.map(v => renderField(v)).join('');
+
+  if (isCollapsible) {
+    return `<div class="form-section advanced" data-section="${name}">
+      <h3 onclick="toggleAdvancedSection(this)">
+        ${name}
+        <span class="section-toggle">▶</span>
+      </h3>
+      <div class="section-body collapsed">${fields}</div>
+    </div>`;
+  }
+
+  return `<div class="form-section ${selectedCloud || ''}" data-section="${name}">
+    <h3>${name}</h3>
+    ${fields}
+  </div>`;
+}
+
+function renderField(v) {
+  const label = VARIABLE_DISPLAY_NAMES[v.name] || formatVarName(v.name);
+  const desc = VARIABLE_DESCRIPTIONS[v.name] || v.description || '';
+  const val = formValues[v.name] !== undefined ? formValues[v.name] : '';
+  const required = v.required ? '<span class="required">*</span>' : '';
+  const isBool = v.var_type.toLowerCase().includes('bool');
+  const isSensitive = v.sensitive;
+  const isSelect = v.name === 'network_configuration';
+
+  if (isBool) {
+    const checked = String(val) === 'true' ? 'checked' : '';
+    return `<div class="form-group" data-field="${v.name}">
+      <label class="checkbox-label">
+        <input type="checkbox" ${checked} onchange="onFieldChange('${v.name}', this.checked)">
+        ${label} ${required}
+      </label>
+      ${desc ? `<div class="help-text">${desc}</div>` : ''}
+    </div>`;
+  }
+
+  if (isSelect) {
+    return `<div class="form-group" data-field="${v.name}">
+      <label>${label} ${required}</label>
+      <select onchange="onFieldChange('${v.name}', this.value)">
+        <option value="">-- Select --</option>
+        <option value="isolated" ${val === 'isolated' ? 'selected' : ''}>Isolated (New VPC + PrivateLink)</option>
+        <option value="custom" ${val === 'custom' ? 'selected' : ''}>Custom (Existing VPC)</option>
+      </select>
+      ${desc ? `<div class="help-text">${desc}</div>` : ''}
+    </div>`;
+  }
+
+  const placeholder = val ? '' : (desc || label);
+  return `<div class="form-group" data-field="${v.name}">
+    <label for="field-${v.name}">${label} ${required}</label>
+    <input type="${isSensitive ? 'password' : 'text'}" id="field-${v.name}"
+      value="${escapeHtml(String(val))}" placeholder="${escapeHtml(placeholder)}"
+      onchange="onFieldChange('${v.name}', this.value)"
+      oninput="onFieldChange('${v.name}', this.value)">
+    ${desc ? `<div class="help-text">${desc}</div>` : ''}
+  </div>`;
+}
+
+function formatVarName(name) {
+  return name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toggleAdvancedSection(h3) {
+  const section = h3.closest('.form-section');
+  const body = section.querySelector('.section-body');
+  const toggle = h3.querySelector('.section-toggle');
+  const isCollapsed = body.classList.contains('collapsed');
+
+  body.classList.toggle('collapsed');
+  section.classList.toggle('expanded', isCollapsed);
+  toggle.textContent = isCollapsed ? '▼' : '▶';
+}
+
+function onFieldChange(name, value) {
+  formValues[name] = value;
+
+  // Auto-compute subnets from VPC/VNet CIDR changes
+  if (name === 'cidr' && selectedCloud === 'azure') {
+    const subnets = computeSubnets(value);
+    if (subnets) {
+      setFieldValue('subnet_public_cidr', subnets.publicCidr);
+      setFieldValue('subnet_private_cidr', subnets.privateCidr);
+    }
+  }
+  if (name === 'cidr_dp' && selectedCloud === 'azure') {
+    const plSubnets = computeAzurePlSubnets(value);
+    if (plSubnets) {
+      setFieldValue('subnet_workspace_cidrs_0', plSubnets.publicCidr);
+      setFieldValue('subnet_workspace_cidrs_1', plSubnets.privateCidr);
+      setFieldValue('subnet_private_endpoint_cidr', plSubnets.privateEndpointCidr);
+    }
+  }
+  if (name === 'cidr_block' && selectedCloud === 'aws') {
+    const subnets = computeAwsSubnets(value);
+    if (subnets) {
+      setFieldValue('private_subnet_1_cidr', subnets.private1Cidr);
+      setFieldValue('private_subnet_2_cidr', subnets.private2Cidr);
+      setFieldValue('public_subnet_cidr', subnets.publicCidr);
+    }
+  }
+  if (name === 'vpc_cidr_range' && selectedCloud === 'aws') {
+    const sra = computeAwsSraSubnets(value);
+    if (sra) {
+      setFieldValue('private_subnets_cidr_1', sra.private1);
+      setFieldValue('private_subnets_cidr_2', sra.private2);
+      setFieldValue('privatelink_subnets_cidr_1', sra.privatelink1);
+      setFieldValue('privatelink_subnets_cidr_2', sra.privatelink2);
+    }
+  }
+  // Copy resource_group_name to vnet_resource_group_name when creating new VNet
+  if (name === 'create_new_vnet' && value === true && selectedCloud === 'azure') {
+    setFieldValue('vnet_resource_group_name', formValues['resource_group_name'] || '');
+  }
+
+  applyConditionalVisibility();
+}
+
+function setFieldValue(fieldName, value) {
+  formValues[fieldName] = value;
+  const fieldEl = document.querySelector(`[data-field="${fieldName}"]`);
+  if (fieldEl) {
+    const input = fieldEl.querySelector('input[type="text"], select');
+    if (input) input.value = value;
+  }
+}
+
+function onUcToggle() {
+  const enabled = document.getElementById('uc-enabled').checked;
+  document.getElementById('uc-fields').style.display = enabled ? 'block' : 'none';
+}
+
+function applyConditionalVisibility() {
+  for (const rule of CONDITIONAL_VISIBILITY) {
+    const toggleField = document.querySelector(`[data-field="${rule.toggle}"]`);
+    if (!toggleField) continue;
+    const input = toggleField.querySelector('input[type="checkbox"]');
+    if (!input) continue;
+    const isChecked = input.checked;
+
+    for (const f of (isChecked ? rule.showWhenChecked : rule.showWhenUnchecked)) {
+      const el = document.querySelector(`[data-field="${f}"]`);
+      if (el) el.style.display = '';
+    }
+    for (const f of (isChecked ? rule.showWhenUnchecked : rule.showWhenChecked)) {
+      const el = document.querySelector(`[data-field="${f}"]`);
+      if (el) el.style.display = 'none';
+    }
+  }
+
+  for (const rule of SELECT_VISIBILITY) {
+    const toggleField = document.querySelector(`[data-field="${rule.toggle}"]`);
+    if (!toggleField) continue;
+    const select = toggleField.querySelector('select');
+    if (!select) continue;
+
+    const allFields = rule.options.flatMap(o => o.showFields);
+    for (const f of allFields) {
+      const el = document.querySelector(`[data-field="${f}"]`);
+      if (el) el.style.display = 'none';
+    }
+
+    const active = rule.options.find(o => o.value === select.value);
+    if (active) {
+      for (const f of active.showFields) {
+        const el = document.querySelector(`[data-field="${f}"]`);
+        if (el) el.style.display = '';
+      }
+    }
+  }
+}
+
+// ─── tfvars Generation ───────────────────────────────────────────────
+
+function generateTfvars() {
+  const lines = [];
+  const allVars = selectedTemplate.variables;
+
+  const mergedValues = { ...formValues };
+  const ucEnabled = document.getElementById('uc-enabled')?.checked;
+  if (ucEnabled && selectedTemplate.id !== 'gcp-sra') {
+    const mid = document.getElementById('uc-metastore-id')?.value;
+    if (selectedTemplate.id === 'azure-sra') {
+      if (mid) mergedValues['databricks_metastore_id'] = mid;
+    } else {
+      if (mid) mergedValues['existing_metastore_id'] = mid;
+    }
+    mergedValues['create_unity_catalog'] = 'true';
+    const catName = document.getElementById('uc-catalog-name')?.value;
+    const stoName = document.getElementById('uc-storage-name')?.value;
+    if (catName) mergedValues['uc_catalog_name'] = catName;
+    if (stoName) mergedValues['uc_storage_name'] = stoName;
+  }
+
+  for (const v of allVars) {
+    const val = mergedValues[v.name];
+    if (val === undefined || val === null) continue;
+    const strVal = String(val).trim();
+    if (strVal === '' && v.default === null) continue;
+    if (strVal === '') continue;
+    if (strVal === 'null' || strVal.startsWith('null ')) continue;
+
+    const varType = v.var_type.toLowerCase();
+    let formatted;
+
+    if (typeof val === 'boolean' || varType.includes('bool')) {
+      const boolVal = (typeof val === 'boolean') ? val : (strVal === 'true');
+      formatted = `${v.name} = ${boolVal}`;
+    } else if (varType.startsWith('map') || varType.includes('map(') || varType.startsWith('object') || varType.includes('object(')) {
+      if (isValidJson(strVal)) {
+        formatted = formatHclMap(v.name, JSON.parse(strVal));
+      } else if (strVal === '{}') {
+        formatted = `${v.name} = {}`;
+      } else continue;
+    } else if (varType.startsWith('list') || varType.includes('list(') || varType.startsWith('set') || varType.includes('set(')) {
+      if (isValidJson(strVal)) {
+        formatted = formatHclList(v.name, JSON.parse(strVal));
+      } else if (strVal === '[]') {
+        formatted = `${v.name} = []`;
+      } else continue;
+    } else if (varType === 'number') {
+      formatted = `${v.name} = ${strVal}`;
+    } else {
+      formatted = `${v.name} = "${strVal}"`;
+    }
+    lines.push(formatted);
+  }
+  return lines.join('\n');
+}
+
+function formatHclList(name, arr) {
+  const items = arr.map(v => typeof v === 'string' ? `"${v}"` : String(v));
+  return `${name} = [${items.join(', ')}]`;
+}
+
+function formatHclMap(name, obj) {
+  if (!obj || Object.keys(obj).length === 0) return `${name} = {}`;
+  const lines = [`${name} = {`];
+  formatHclObjectFields(obj, 1, lines);
+  lines.push('}');
+  return lines.join('\n');
+}
+
+function formatHclObjectFields(obj, depth, lines) {
+  const indent = '  '.repeat(depth);
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string') lines.push(`${indent}"${k}" = "${v}"`);
+    else if (typeof v === 'number') lines.push(`${indent}"${k}" = ${v}`);
+    else if (typeof v === 'boolean') lines.push(`${indent}"${k}" = ${v}`);
+    else if (Array.isArray(v)) {
+      const items = v.map(i => typeof i === 'string' ? `"${i}"` : String(i));
+      lines.push(`${indent}"${k}" = [${items.join(', ')}]`);
+    } else if (v && typeof v === 'object') {
+      lines.push(`${indent}"${k}" = {`);
+      formatHclObjectFields(v, depth + 1, lines);
+      lines.push(`${indent}}`);
+    } else {
+      lines.push(`${indent}"${k}" = null`);
+    }
+  }
+}
+
+// ─── Download ────────────────────────────────────────────────────────
+
+async function downloadZip() {
+  const zip = new JSZip();
+  const folderName = selectedTemplate.id;
+  const folder = zip.folder(folderName);
+
+  for (const file of selectedTemplate.files) {
+    folder.file(file.path, file.content);
+  }
+
+  const tfvars = generateTfvars();
+  folder.file('terraform.tfvars', tfvars);
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${folderName}.zip`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
